@@ -1,4 +1,4 @@
-#include "../include/ResourcesManager.hpp"
+#include "../include/GuelderResourcesManager.hpp"
 
 #include <fstream>
 #include <sstream>
