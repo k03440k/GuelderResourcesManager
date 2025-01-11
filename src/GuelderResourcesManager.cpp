@@ -5,13 +5,16 @@
 #include <regex>
 #include <unordered_map>
 #include <format>
+#include <string>
+#include <string_view>
+#include <array>
 
 namespace GuelderResourcesManager
 {
     ResourcesManager::ResourcesManager(const std::string_view& executablePath)
-        : path(executablePath.substr(0, executablePath.find_last_of("/\\"))), m_Vars(GetAllVariables(GetRelativeFileSource(resourcesPath))) {}
+        : path(executablePath.substr(0, executablePath.find_last_of("/\\"))), m_Vars(GetAllResourcesVariables(GetRelativeFileSource(resourcesPath))) {}
 
-    ResourcesManager::vars ResourcesManager::GetAllVariables(const std::string_view& resSource)
+    ResourcesManager::vars ResourcesManager::GetAllResourcesVariables(const std::string_view& resSource)
     {
         vars varsMap;
 
@@ -27,7 +30,26 @@ namespace GuelderResourcesManager
 
         return varsMap;
     }
+    std::string ResourcesManager::ExecuteCommand(const std::string_view& command)
+    {
+        std::array<char, 128> buffer{};
+        std::string result;
+        std::unique_ptr<FILE, decltype(&_pclose)> cmd(_popen(command.data(), "r"), _pclose);
 
+        if(!cmd)
+            throw(std::exception("Failed to create std::unique_ptr<FILE, decltype(&pclose)>"));
+
+        while(fgets(buffer.data(), buffer.size(), cmd.get()) != nullptr)
+            result += buffer.data();
+
+        //TODO: find why it has \n
+        auto it = result.find("\n");
+
+        if(it != std::string::npos)
+            result.erase(result.begin() + it);
+
+        return result;
+    }
     std::string ResourcesManager::GetRelativeFileSource(const std::string_view& relativeFilePath) const
     {
         std::ifstream file;
@@ -61,7 +83,7 @@ namespace GuelderResourcesManager
     std::string_view ResourcesManager::GetResourcesVariableContent(const std::string_view& name) const
     {
         const auto found = m_Vars.find(name.data());
-        //GE_ASSERT(found != m_Vars.end(), "cannot find \"", name, "\" variable, in \"", path, '/', resourcesPath, "\"");
+
         if(found == m_Vars.end())
             throw std::exception(std::format("Failed to find \"{}\" variable, in \"{}/{}\"", name, path, resourcesPath).c_str());
 

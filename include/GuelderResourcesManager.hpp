@@ -4,15 +4,14 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <memory>
 
 namespace GuelderResourcesManager
 {
     //you can define your own path
 #ifdef CUSTOM_RESOURCE_FILE_PATH
-    extern constexpr const char resourcesPath[] = CUSTOM_RESOURCE_FILE_PATH;
+    constexpr const char resourcesPath[] = CUSTOM_RESOURCE_FILE_PATH;
 #else
-    extern constexpr const char resourcesPath[] = "Resources/Resources.txt";
+    constexpr const char resourcesPath[] = "Resources/Resources.txt";
 #endif
 
     class ResourcesManager
@@ -28,6 +27,9 @@ namespace GuelderResourcesManager
         ResourcesManager& operator=(const ResourcesManager& other) = delete;
         ResourcesManager& operator=(ResourcesManager&& other) = delete;
 
+        //needs to be reworked
+        static std::string ExecuteCommand(const std::string_view& command);
+
         //get file string
         std::string GetRelativeFileSource(const std::string_view& relativeFilePath) const;
         static std::string GetFileSource(const std::string_view& filePath);
@@ -42,7 +44,7 @@ namespace GuelderResourcesManager
         std::string GetFullPathToRelativeFile(const std::string_view& relativePath) const;
         std::string GetFullPathToRelativeFileViaVar(const std::string_view& varName) const;
 
-        static vars GetAllVariables(const std::string_view& resSource);
+        static vars GetAllResourcesVariables(const std::string_view& resSource);
 
         const vars& GetResourcesVariables() const noexcept;
 
