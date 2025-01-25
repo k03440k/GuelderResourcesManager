@@ -1,17 +1,26 @@
 #pragma once
 
-#include <iostream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <limits>
+#include <vector>
 
 namespace GuelderResourcesManager
 {
     //you can define your own path
-#ifdef CUSTOM_RESOURCE_FILE_PATH
-    constexpr const char resourcesPath[] = CUSTOM_RESOURCE_FILE_PATH;
+#ifdef GE_CUSTOM_RESOURCE_FOLDER_PATH
+    constexpr const std::string_view g_ResourcesFolderPath = GE_CUSTOM_RESOURCE_FOLDER_PATH;
 #else
-    constexpr const char resourcesPath[] = "Resources/Resources.txt";
+	constexpr const std::string_view g_ResourcesFolderPath = "Resources";
+#endif
+	
+#ifdef GE_CUSTOM_RESOURCE_FILE_PATH
+    //relatively to g_ResourcesFolderPath, must be inside the g_ResourcesFolderPath
+    constexpr const std::string_view g_ResourcesFilePath = GE_CUSTOM_RESOURCE_FILE_PATH;
+#else
+    //relatively to g_ResourcesFolderPath, must be inside the g_ResourcesFolderPath
+    constexpr const std::string_view g_ResourcesFilePath = "Resources.txt";
 #endif
 
     class ResourcesManager
@@ -26,15 +35,14 @@ namespace GuelderResourcesManager
         ResourcesManager(ResourcesManager&& other) = delete;
         ResourcesManager& operator=(const ResourcesManager& other) = delete;
         ResourcesManager& operator=(ResourcesManager&& other) = delete;
-
-        //needs to be reworked
-        static std::string ExecuteCommand(const std::string_view& command);
+        //if outputs == std::numeric_limits<uint32_t>::max() then all outputs will be received
+        static std::vector<std::string> ExecuteCommand(const std::string_view& command, uint32_t outputs = std::numeric_limits<uint32_t>::max());//for some reason std::numeric_limits<uint32_t>::max() causes issues
 
         //get file string
         std::string GetRelativeFileSource(const std::string_view& relativeFilePath) const;
         static std::string GetFileSource(const std::string_view& filePath);
         /*
-         *@brief Finds variable content, for example: "var i = "staff"; then it will return "staff"
+         *@brief Finds variable content, for example: "var i = "staff";" then it will return "staff"
         */
         std::string_view GetResourcesVariableContent(const std::string_view& name) const;
         /*
