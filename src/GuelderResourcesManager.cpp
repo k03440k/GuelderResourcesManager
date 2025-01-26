@@ -28,7 +28,7 @@ namespace GuelderResourcesManager
 
         for(; fgets(buffer.data(), buffer.size(), cmd.get()) != nullptr && outputs > 0; outputs--)
         {
-            output.insert(output.end(), buffer.begin(), buffer.end());
+            output.insert(output.end(), buffer.begin(), buffer.end() - (buffer.end() - buffer.begin() > 1 ? 1 : 0));
 
             if(output.find('\n') != std::string::npos)
             {
