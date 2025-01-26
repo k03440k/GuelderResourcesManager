@@ -26,7 +26,7 @@ namespace GuelderResourcesManager
 
         std::string output;
 
-        for(; fgets(buffer.data(), buffer.size(), cmd.get()) != nullptr && outputs > 0; outputs--)
+        while(fgets(buffer.data(), buffer.size(), cmd.get()) != nullptr && outputs > 0)
         {
             output.insert(output.end(), buffer.begin(), buffer.end() - (buffer.end() - buffer.begin() > 1 ? 1 : 0));
 
@@ -39,6 +39,8 @@ namespace GuelderResourcesManager
 
                 result.push_back(output);
                 output.clear();
+
+                outputs--;
             }
         }
 
