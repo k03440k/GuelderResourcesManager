@@ -4,7 +4,9 @@
 #include <string_view>
 #include <unordered_map>
 #include <limits>
+#include <memory>
 #include <vector>
+#include <array>
 
 namespace GuelderResourcesManager
 {
@@ -12,9 +14,9 @@ namespace GuelderResourcesManager
 #ifdef GE_CUSTOM_RESOURCE_FOLDER_PATH
     constexpr const std::string_view g_ResourcesFolderPath = GE_CUSTOM_RESOURCE_FOLDER_PATH;
 #else
-	constexpr const std::string_view g_ResourcesFolderPath = "Resources";
+    constexpr const std::string_view g_ResourcesFolderPath = "Resources";
 #endif
-	
+
 #ifdef GE_CUSTOM_RESOURCE_FILE_PATH
     //relatively to g_ResourcesFolderPath, must be inside the g_ResourcesFolderPath
     constexpr const std::string_view g_ResourcesFilePath = GE_CUSTOM_RESOURCE_FILE_PATH;
@@ -22,6 +24,26 @@ namespace GuelderResourcesManager
     //relatively to g_ResourcesFolderPath, must be inside the g_ResourcesFolderPath
     constexpr const std::string_view g_ResourcesFilePath = "Resources.txt";
 #endif
+
+    template<typename T>
+    concept IsString = std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view> || std::is_same_v<T, std::wstring> || std::is_same_v<T, std::wstring_view>;
+
+    template<typename Char>
+    constexpr auto GetPOpen()
+    {
+        if constexpr (std::is_same_v<Char, char>)
+            return _popen;
+        else
+            return _wpopen;
+    }
+    template<typename Char>
+    constexpr auto GetFGets()
+    {
+        if constexpr (std::is_same_v<Char, char>)
+            return fgets;
+        else
+            return fgetws;
+    }
 
     class ResourcesManager
     {
@@ -35,8 +57,52 @@ namespace GuelderResourcesManager
         ResourcesManager(ResourcesManager&& other) = delete;
         ResourcesManager& operator=(const ResourcesManager& other) = delete;
         ResourcesManager& operator=(ResourcesManager&& other) = delete;
+
         //if outputs == std::numeric_limits<uint32_t>::max() then all outputs will be received
-        static std::vector<std::string> ExecuteCommand(const std::string_view& command, uint32_t outputs = std::numeric_limits<uint32_t>::max());//for some reason std::numeric_limits<uint32_t>::max() causes issues
+        template<typename InChar = char, typename OutChar = InChar, IsString String = std::string>
+        static std::vector<std::basic_string<OutChar>> ExecuteCommand(const String& command, uint32_t outputs = std::numeric_limits<uint32_t>::max())
+        {
+            using outString = std::basic_string<OutChar>;
+
+            auto PipeOpen = GetPOpen<InChar>();
+            auto FGets = GetFGets<OutChar>();
+
+            std::array<OutChar, 128> buffer{};
+            std::vector<outString> result;
+
+            const InChar* mode;
+            if constexpr (std::is_same_v<InChar, char>)
+                mode = "r";
+            else
+                mode = L"r";
+
+            const std::unique_ptr<FILE, decltype(&_pclose)> cmd(PipeOpen(command.data(), mode), _pclose);
+
+            if(!cmd)
+                throw std::exception("Failed to create std::unique_ptr<FILE, decltype(&pclose)>");
+
+            outString output;
+
+            while(FGets(buffer.data(), buffer.size(), cmd.get()) != nullptr && outputs > 0)
+            {
+                output.insert(output.end(), buffer.begin(), buffer.end() - (buffer.end() - buffer.begin() > 1 ? 1 : 0));
+
+                if(output.find('\n') != outString::npos)
+                {
+                    auto it = output.find('\n');
+
+                    if(it != outString::npos)
+                        output.erase(it);
+
+                    result.push_back(output);
+                    output.clear();
+
+                    outputs--;
+                }
+            }
+
+            return result;
+        }
 
         //get file string
         std::string GetRelativeFileSource(const std::string_view& relativeFilePath) const;

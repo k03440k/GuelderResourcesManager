@@ -15,37 +15,6 @@ namespace GuelderResourcesManager
     ResourcesManager::ResourcesManager(const std::string_view& executablePath)
         : path(executablePath.substr(0, executablePath.find_last_of("/\\"))), m_Vars(GetAllResourcesVariables(GetRelativeFileSource(std::format("{}/{}", g_ResourcesFolderPath, g_ResourcesFilePath)))) {}
 
-    std::vector<std::string> ResourcesManager::ExecuteCommand(const std::string_view& command, uint32_t outputs)
-    {
-        std::array<char, 128> buffer{};
-        std::vector<std::string> result;
-        std::unique_ptr<FILE, decltype(&_pclose)> cmd(_popen(command.data(), "r"), _pclose);
-
-        if(!cmd)
-            throw(std::exception("Failed to create std::unique_ptr<FILE, decltype(&pclose)>"));
-
-        std::string output;
-
-        while(fgets(buffer.data(), buffer.size(), cmd.get()) != nullptr && outputs > 0)
-        {
-            output.insert(output.end(), buffer.begin(), buffer.end() - (buffer.end() - buffer.begin() > 1 ? 1 : 0));
-
-            if(output.find('\n') != std::string::npos)
-            {
-                auto it = output.find('\n');
-
-                if(it != std::string::npos)
-                    output.erase(it);
-
-                result.push_back(output);
-                output.clear();
-
-                outputs--;
-            }
-        }
-
-        return result;
-    }
     std::string ResourcesManager::GetRelativeFileSource(const std::string_view& relativeFilePath) const
     {
         std::ifstream file;
