@@ -7,21 +7,22 @@
 #include <format>
 #include <string>
 #include <string_view>
-#include <array>
-#include <vector>
 
 namespace GuelderResourcesManager
 {
-    ResourcesManager::ResourcesManager(const std::string_view& executablePath)
-        : path(executablePath.substr(0, executablePath.find_last_of("/\\"))), m_Vars(GetAllResourcesVariables(GetRelativeFileSource(std::format("{}/{}", g_ResourcesFolderPath, g_ResourcesFilePath)))) {}
+    ResourcesManager::ResourcesManager(const std::string_view& executablePath, const std::string_view& resourcesFolderPath, const std::string_view& configPath)
+        : m_Path(executablePath.substr(0, executablePath.find_last_of("/\\"))), m_ResourcesFolderPath(resourcesFolderPath), m_ConfigPath(configPath)
+    {
+        m_Vars = GetAllResourcesVariables(GetRelativeFileSource(std::format("{}/{}", resourcesFolderPath, configPath)));
+    }
 
     std::string ResourcesManager::GetRelativeFileSource(const std::string_view& relativeFilePath) const
     {
         std::ifstream file;
-        file.open(path + "/" + relativeFilePath.data(), std::ios::binary);
+        file.open(m_Path + "/" + relativeFilePath.data(), std::ios::binary);
 
         if(!file.is_open())
-            throw std::exception(std::format("Failed to open file at location: {}\\{}", path, relativeFilePath).c_str());
+            throw std::exception(std::format("Failed to open file at location: {}\\{}", m_Path, relativeFilePath).c_str());
 
         std::stringstream source;//istringstream or stringstream?
         source << file.rdbuf();
@@ -50,24 +51,24 @@ namespace GuelderResourcesManager
         const auto found = m_Vars.find(name.data());
 
         if(found == m_Vars.end())
-            throw std::exception(std::format(R"(Failed to find "{}" variable, in "{}\\{}")", name, path, g_ResourcesFilePath).c_str());
+            throw std::exception(std::format(R"(Failed to find "{}" variable, in "{}\\{}")", name, m_Path, m_ConfigPath).c_str());
 
         return found->second;
     }
     std::string ResourcesManager::GetResourcesVariableFileContent(const std::string_view& name) const
     {
-        return GetRelativeFileSource(std::format("{}\\{}", g_ResourcesFolderPath, GetResourcesVariableContent(name)).c_str());
+        return GetRelativeFileSource(std::format("{}\\{}", m_ResourcesFolderPath, GetResourcesVariableContent(name)).c_str());
     }
     std::string ResourcesManager::GetFullPathToRelativeFile(const std::string_view& relativePath) const
     {
-        std::string filePath(path);
+        std::string filePath(m_Path);
         filePath.append("\\");
         filePath.append(relativePath);
         return filePath;
     }
     std::string ResourcesManager::GetFullPathToRelativeFileViaVar(const std::string_view& varName) const
     {
-        return GetFullPathToRelativeFile(std::format("{}\\{}", g_ResourcesFolderPath, GetResourcesVariableContent(varName)));
+        return GetFullPathToRelativeFile(std::format("{}\\{}", m_ResourcesFolderPath, GetResourcesVariableContent(varName)));
     }
     ResourcesManager::vars ResourcesManager::GetAllResourcesVariables(const std::string_view& resSource)
     {
@@ -88,5 +89,17 @@ namespace GuelderResourcesManager
     const ResourcesManager::vars& ResourcesManager::GetResourcesVariables() const noexcept
     {
         return m_Vars;
+    }
+    std::string ResourcesManager::GetPath() const
+    {
+        return m_Path;
+    }
+    std::string ResourcesManager::GetResourcesFolderPath() const
+    {
+        return m_ResourcesFolderPath;
+    }
+    std::string ResourcesManager::GetConfigPath() const
+    {
+        return m_ConfigPath;
     }
 }

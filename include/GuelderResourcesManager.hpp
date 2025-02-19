@@ -4,34 +4,18 @@
 #include <string_view>
 #include <unordered_map>
 #include <limits>
-#include <memory>
 #include <vector>
-#include <array>
+#include <memory>
 
 namespace GuelderResourcesManager
 {
-    //you can define your own path
-#ifdef GE_CUSTOM_RESOURCE_FOLDER_PATH
-    constexpr const std::string_view g_ResourcesFolderPath = GE_CUSTOM_RESOURCE_FOLDER_PATH;
-#else
-    constexpr const std::string_view g_ResourcesFolderPath = "Resources";
-#endif
-
-#ifdef GE_CUSTOM_RESOURCE_FILE_PATH
-    //relatively to g_ResourcesFolderPath, must be inside the g_ResourcesFolderPath
-    constexpr const std::string_view g_ResourcesFilePath = GE_CUSTOM_RESOURCE_FILE_PATH;
-#else
-    //relatively to g_ResourcesFolderPath, must be inside the g_ResourcesFolderPath
-    constexpr const std::string_view g_ResourcesFilePath = "Resources.txt";
-#endif
-
     template<typename T>
     concept IsString = std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view> || std::is_same_v<T, std::wstring> || std::is_same_v<T, std::wstring_view>;
 
     template<typename Char>
     constexpr auto GetPOpen()
     {
-        if constexpr (std::is_same_v<Char, char>)
+        if constexpr(std::is_same_v<Char, char>)
             return _popen;
         else
             return _wpopen;
@@ -39,7 +23,7 @@ namespace GuelderResourcesManager
     template<typename Char>
     constexpr auto GetFGets()
     {
-        if constexpr (std::is_same_v<Char, char>)
+        if constexpr(std::is_same_v<Char, char>)
             return fgets;
         else
             return fgetws;
@@ -50,13 +34,13 @@ namespace GuelderResourcesManager
     public:
         using vars = std::unordered_map<std::string, std::string>;
     public:
-        ResourcesManager(const std::string_view& executablePath);
+        ResourcesManager(const std::string_view& executablePath, const std::string_view& resourcesFolderPath = "Resources", const std::string_view& configPath = "config.txt");
         ~ResourcesManager() = default;
 
-        ResourcesManager(const ResourcesManager& other) = delete;
-        ResourcesManager(ResourcesManager&& other) = delete;
-        ResourcesManager& operator=(const ResourcesManager& other) = delete;
-        ResourcesManager& operator=(ResourcesManager&& other) = delete;
+        ResourcesManager(const ResourcesManager& other) = default;
+        ResourcesManager(ResourcesManager&& other) noexcept = default;
+        ResourcesManager& operator=(const ResourcesManager& other) = default;
+        ResourcesManager& operator=(ResourcesManager&& other) noexcept = default;
 
         //if outputs == std::numeric_limits<uint32_t>::max() then all outputs will be received
         template<typename InChar = char, typename OutChar = InChar, IsString String = std::string>
@@ -71,7 +55,7 @@ namespace GuelderResourcesManager
             std::vector<outString> result;
 
             const InChar* mode;
-            if constexpr (std::is_same_v<InChar, char>)
+            if constexpr(std::is_same_v<InChar, char>)
                 mode = "r";
             else
                 mode = L"r";
@@ -122,10 +106,16 @@ namespace GuelderResourcesManager
 
         const vars& GetResourcesVariables() const noexcept;
 
-        const std::string path;
+        std::string GetPath() const;
+        std::string GetResourcesFolderPath() const;
+        std::string GetConfigPath() const;
 
     private:
         //variables from resources.txt
-        const vars m_Vars;
+        vars m_Vars;
+
+        std::string m_Path;
+        std::string m_ResourcesFolderPath;
+        std::string m_ConfigPath;
     };
 }
