@@ -1,11 +1,264 @@
 #pragma once
 
+#define NOMINMAX
+
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <limits>
 #include <vector>
 #include <memory>
+#include <charconv>
+#include <stdexcept>
+#include <format>
+#include <concepts>
+#include <unordered_map>
+
+#ifdef WIN32
+#include <Windows.h>
+#endif
+
+//idk #define NOMINMAX doesn't work
+#undef max
+
+//converters
+namespace GuelderResourcesManager
+{
+    template<typename T>
+    concept IsNumber = std::integral<T> || std::floating_point<T>;
+
+    template<IsNumber Integer>
+    int StringToNumber(const std::string_view& str)
+    {
+        Integer res = 0;
+
+        auto [wrongChar, errorCode] = std::from_chars(str.data(), str.data() + str.size(), res);
+
+#ifndef GE_SOFT
+        if(static_cast<int>(errorCode) != 0)
+            throw std::invalid_argument(std::format("Failed to convert {} to {}", str, typeid(Integer).name()));
+#endif
+
+        return res;
+    }
+    inline bool StringToBool(const std::string_view& str)
+    {
+        if(str == "true" || str == "1")
+            return true;
+        else if(str == "false" || str == "0")
+            return false;
+
+#ifndef GE_SOFT
+        throw std::invalid_argument(std::format("Failed to convert {} to bool.", str));
+#endif
+        return false;
+    }
+    /**
+    * \brief WARNING: This func only works properly with windows, because I don't give a fuck about Linux or MacOS.
+    */
+    inline std::wstring StringToWString(const std::string_view& str)
+    {
+#ifdef WIN32
+        const int neededSize = MultiByteToWideChar(CP_UTF8, 0, str.data(), -1, nullptr, 0);
+        std::wstring wString(neededSize, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, str.data(), -1, wString.data(), neededSize);
+#else
+        std::wstring wString{};
+#endif
+
+        return wString;
+    }
+    /**
+     * \brief WARNING: This func only works properly with windows, because I don't give a fuck about Linux or MacOS.
+     */
+    inline std::string WStringToString(const std::wstring_view& wStr)
+    {
+#ifdef WIN32
+        const int neededSize = WideCharToMultiByte(CP_UTF8, 0, wStr.data(), wStr.size(), nullptr, 0, nullptr, nullptr);
+        std::string string(neededSize, L'\0');
+        WideCharToMultiByte(CP_UTF8, 0, wStr.data(), wStr.size(), string.data(), neededSize, nullptr, nullptr);
+#else
+        std::string string;
+#endif
+
+        return string;
+    }
+}
+
+//variables
+namespace GuelderResourcesManager
+{
+    enum class DataType : uint8_t
+    {
+        Invalid = 0,
+        Var,
+        Int,
+        UInt,
+        Long,
+        ULong,
+        LongLong,
+        ULongLong,
+        Short,
+        UShort,
+        Char,
+        UChar,
+        Float,
+        Double,
+        LongDouble,
+        Bool,
+        String,
+        WString
+    };
+
+    inline DataType StringToDataType(const std::string_view& str)
+    {
+        static const std::unordered_map<std::string_view, DataType> lookup =
+        {
+            {"Invalid", DataType::Invalid},
+            {"Var", DataType::Var},
+            {"Int", DataType::Int},
+            {"UInt", DataType::UInt},
+            {"Long", DataType::Long},
+            {"ULong", DataType::ULong},
+            {"LongLong", DataType::LongLong},
+            {"ULongLong", DataType::ULongLong},
+            {"Short", DataType::Short},
+            {"UShort", DataType::UShort},
+            {"Char", DataType::Char},
+            {"UChar", DataType::UChar},
+            {"Float", DataType::Float},
+            {"Double", DataType::Double},
+            {"LongDouble", DataType::LongDouble},
+            {"Bool", DataType::Bool},
+            {"String", DataType::String},
+            {"WString", DataType::WString}
+        };
+
+        if(const auto it = lookup.find(str); it != lookup.end())
+            return it->second;
+
+        return DataType::Invalid;
+    }
+    inline std::string_view DataTypeToString(DataType type)
+    {
+        switch(type)
+        {
+        case DataType::Var: return "Var";
+        case DataType::Int: return "Int";
+        case DataType::UInt: return "UInt";
+        case DataType::Long: return "Long";
+        case DataType::ULong: return "ULong";
+        case DataType::LongLong: return "LongLong";
+        case DataType::ULongLong: return "ULongLong";
+        case DataType::Short: return "Short";
+        case DataType::UShort: return "UShort";
+        case DataType::Char: return "Char";
+        case DataType::UChar: return "UChar";
+        case DataType::Float: return "Float";
+        case DataType::Double: return "Double";
+        case DataType::LongDouble: return "LongDouble";
+        case DataType::Bool: return "Bool";
+        case DataType::String: return "String";
+        case DataType::WString: return "WString";
+        default: return "Invalid";
+        }
+    }
+
+    struct Variable
+    {
+    public:
+        Variable(const std::string_view& name, const std::string_view& value = "", const DataType& type = DataType::Invalid)
+            : m_Name(name), m_Type(type), m_Value(value) {}
+
+        bool operator==(const Variable& other) const
+        {
+            return m_Type == other.m_Type && m_Value == other.m_Value;
+        }
+
+        template<typename T>
+        T GetValue() const
+        {
+            throw std::exception("Failed to find any suitable method GetValue<T>(), probably the GetValue<T>() was called with invalid template param.");
+        }
+        template<IsNumber Numeral>
+        Numeral GetValue() const
+        {
+            if(!IsNumeral())
+                throw std::invalid_argument("The variable's type is not numeral.");
+
+            return StringToNumber<Numeral>(m_Value);
+        }
+        template<>
+        bool GetValue() const
+        {
+            if(m_Type != DataType::Bool)
+                throw std::invalid_argument("The variable's type is not bool.");
+
+            return StringToBool(m_Value);
+        }
+
+        /**
+         * \brief WARNING: this method doesn't check whether the m_Type == DataType::String
+         */
+        template<>
+        const std::string& GetValue() const
+        {
+            return m_Value;
+        }
+        template<>
+        std::string_view GetValue() const
+        {
+            return m_Value;
+        }
+        template<>
+        std::wstring GetValue() const
+        {
+            if(m_Type != DataType::WString)
+                throw std::invalid_argument("The variable's type is not std::wstring.");
+
+            return StringToWString(m_Value);
+        }
+
+        bool SameType(const Variable& other) const
+        {
+            return m_Type == other.m_Type;
+        }
+        bool SameType(const DataType& type) const
+        {
+            return m_Type == type;
+        }
+
+        bool IsNumeral() const
+        {
+            switch(m_Type)
+            {
+            case DataType::Int:
+            case DataType::UInt:
+            case DataType::Long:
+            case DataType::ULong:
+            case DataType::LongLong:
+            case DataType::ULongLong:
+            case DataType::Short:
+            case DataType::UShort:
+            case DataType::Char:
+            case DataType::UChar:
+            case DataType::Float:
+            case DataType::Double:
+            case DataType::LongDouble:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        DataType GetType() const noexcept { return m_Type; }
+        const std::string& GetName() const noexcept { return m_Name; }
+
+    private:
+        std::string m_Name;
+        DataType m_Type;
+        std::string m_Value;
+    };
+}
 
 namespace GuelderResourcesManager
 {
@@ -32,9 +285,7 @@ namespace GuelderResourcesManager
     class ResourcesManager
     {
     public:
-        using vars = std::unordered_map<std::string, std::string>;
-    public:
-        ResourcesManager(const std::string_view& executablePath, const std::string_view& resourcesFolderPath = "Resources", const std::string_view& configPath = "config.txt");
+        ResourcesManager(const std::string_view& executablePath, const std::string_view& resourcesFolderPath = "Resources", const std::string_view& configPath = "Config.txt");
         ~ResourcesManager() = default;
 
         ResourcesManager(const ResourcesManager& other) = default;
@@ -88,31 +339,30 @@ namespace GuelderResourcesManager
             return result;
         }
 
-        //get file string
-        std::string GetRelativeFileSource(const std::string_view& relativeFilePath) const;
         static std::string GetFileSource(const std::string_view& filePath);
+        std::string GetRelativeFileSource(const std::string_view& relativeFilePath) const;
         /*
          *@brief Finds variable content, for example: "var i = "staff";" then it will return "staff"
         */
-        std::string_view GetResourcesVariableContent(const std::string_view& name) const;
+        const Variable& GetVariable(const std::string_view& name) const;
         /*
          *@brief Finds file content by variable content in resources.txt
         */
-        std::string GetResourcesVariableFileContent(const std::string_view& name) const;
+        std::string GetFileSourceByVariable(const std::string_view& name) const;
+
         std::string GetFullPathToRelativeFile(const std::string_view& relativePath) const;
-        std::string GetFullPathToRelativeFileViaVar(const std::string_view& varName) const;
+        std::string GetFullPathToRelativeFileByVariable(const std::string_view& varName) const;
 
-        static vars GetAllResourcesVariables(const std::string_view& resSource);
+        static std::vector<Variable> GetVariablesFromFile(const std::string_view& configSource);
 
-        const vars& GetResourcesVariables() const noexcept;
+        const std::vector<Variable>& GetVariables() const noexcept;
 
-        std::string GetPath() const;
-        std::string GetResourcesFolderPath() const;
-        std::string GetConfigPath() const;
+        const std::string& GetPath() const;
+        const std::string& GetResourcesFolderPath() const;
+        const std::string& GetConfigPath() const;
 
     private:
-        //variables from resources.txt
-        vars m_Vars;
+        std::vector<Variable> m_Vars;
 
         std::string m_Path;
         std::string m_ResourcesFolderPath;
