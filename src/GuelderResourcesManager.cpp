@@ -39,24 +39,21 @@ namespace GuelderResourcesManager
         const auto found = std::ranges::find_if(m_Vars, [&name](const Variable& var) { return var.GetName() == name; });
 
         if(found == m_Vars.end())
-            throw std::exception(std::format(R"(Failed to find "{}" variable, in "{}\\{}")", name, m_Path, m_ConfigPath).c_str());
+            throw std::exception(std::format(R"(Failed to find "{}" variable, in "{}/{}")", name, m_Path, m_ConfigPath).c_str());
 
         return *found;
     }
     std::string ResourcesManager::GetFileSourceByVariable(const std::string_view& name) const
     {
-        return GetRelativeFileSource(std::format("{}\\{}", m_ResourcesFolderPath, GetVariable(name).GetValue<std::string_view>()).c_str());
+        return GetRelativeFileSource(std::format("{}/{}", m_ResourcesFolderPath, GetVariable(name).GetValue<std::string_view>()).c_str());
     }
     std::string ResourcesManager::GetFullPathToRelativeFile(const std::string_view& relativePath) const
     {
-        std::string filePath(m_Path);
-        filePath.append("\\");
-        filePath.append(relativePath);
-        return filePath;
+        return {m_Path + "\\" + relativePath.data()};
     }
     std::string ResourcesManager::GetFullPathToRelativeFileByVariable(const std::string_view& varName) const
     {
-        return GetFullPathToRelativeFile(std::format("{}\\{}", m_ResourcesFolderPath, GetVariable(varName).GetValue<std::string_view>()));
+        return GetFullPathToRelativeFile(std::format("{}/{}", m_ResourcesFolderPath, GetVariable(varName).GetValue<std::string_view>()));
     }
     std::vector<Variable> ResourcesManager::GetVariablesFromFile(const std::string_view& configSource)
     {

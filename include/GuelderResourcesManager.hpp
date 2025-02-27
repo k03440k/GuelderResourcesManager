@@ -12,6 +12,7 @@
 #include <format>
 #include <concepts>
 #include <unordered_map>
+#include <array>
 
 #ifdef WIN32
 #include <Windows.h>
@@ -297,13 +298,16 @@ namespace GuelderResourcesManager
         template<typename InChar = char, typename OutChar = InChar, IsString String = std::string>
         static std::vector<std::basic_string<OutChar>> ExecuteCommand(const String& command, uint32_t outputs = std::numeric_limits<uint32_t>::max())
         {
-            using outString = std::basic_string<OutChar>;
+            using OutString = std::basic_string<OutChar>;
 
             auto PipeOpen = GetPOpen<InChar>();
             auto FGets = GetFGets<OutChar>();
 
             std::array<OutChar, 128> buffer{};
-            std::vector<outString> result;
+            std::vector<OutString> result;
+
+            if(outputs != std::numeric_limits<uint32_t>::max())
+                result.reserve(outputs);
 
             const InChar* mode;
             if constexpr(std::is_same_v<InChar, char>)
@@ -314,22 +318,18 @@ namespace GuelderResourcesManager
             const std::unique_ptr<FILE, decltype(&_pclose)> cmd(PipeOpen(command.data(), mode), _pclose);
 
             if(!cmd)
-                throw std::exception("Failed to create std::unique_ptr<FILE, decltype(&pclose)>");
+                throw std::exception("Failed to execute command.");
 
-            outString output;
+            OutString output;
 
-            while(FGets(buffer.data(), buffer.size(), cmd.get()) != nullptr && outputs > 0)
+            while(outputs > 0 && FGets(buffer.data(), buffer.size(), cmd.get()) != nullptr)
             {
-                output.insert(output.end(), buffer.begin(), buffer.end() - (buffer.end() - buffer.begin() > 1 ? 1 : 0));
+                auto newlinePos = std::find(buffer.begin(), buffer.end(), '\n');
+                output.append(buffer.begin(), newlinePos);
 
-                if(output.find('\n') != outString::npos)
+                if(newlinePos != buffer.end())
                 {
-                    auto it = output.find('\n');
-
-                    if(it != outString::npos)
-                        output.erase(it);
-
-                    result.push_back(output);
+                    result.push_back(std::move(output));
                     output.clear();
 
                     outputs--;
