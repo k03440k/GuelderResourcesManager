@@ -28,7 +28,7 @@ namespace GuelderResourcesManager
     concept IsNumber = std::integral<T> || std::floating_point<T>;
 
     template<IsNumber Integer>
-    int StringToNumber(const std::string_view& str)
+    Integer StringToNumber(const std::string_view& str)
     {
         Integer res = 0;
 
