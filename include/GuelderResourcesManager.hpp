@@ -19,7 +19,7 @@
 #endif
 
 //idk #define NOMINMAX doesn't work
-#undef max
+//#undef max
 
 //converters
 namespace GuelderResourcesManager
@@ -295,7 +295,7 @@ namespace GuelderResourcesManager
         ResourcesManager& operator=(ResourcesManager&& other) noexcept = default;
 
         //if outputs == std::numeric_limits<uint32_t>::max() then all outputs will be received
-        template<typename InChar = char, typename OutChar = InChar, IsString String = std::string>
+        template<typename InChar = char, typename OutChar = InChar, uint32_t bufferSize = 128, IsString String = std::string>
         static std::vector<std::basic_string<OutChar>> ExecuteCommand(const String& command, uint32_t outputs = std::numeric_limits<uint32_t>::max())
         {
             using OutString = std::basic_string<OutChar>;
@@ -303,7 +303,7 @@ namespace GuelderResourcesManager
             auto PipeOpen = GetPOpen<InChar>();
             auto FGets = GetFGets<OutChar>();
 
-            std::array<OutChar, 128> buffer{};
+            std::array<OutChar, bufferSize> buffer{};
             std::vector<OutString> result;
 
             if(outputs != std::numeric_limits<uint32_t>::max())
@@ -325,7 +325,7 @@ namespace GuelderResourcesManager
             while(outputs > 0 && FGets(buffer.data(), buffer.size(), cmd.get()) != nullptr)
             {
                 auto newlinePos = std::find(buffer.begin(), buffer.end(), '\n');
-                output.append(buffer.begin(), newlinePos);
+                output.append(buffer.begin(), newlinePos - 1 * (newlinePos == buffer.end() ? 1 : 0 ));//cuz buffer.end() - 1 is '\0'
 
                 if(newlinePos != buffer.end())
                 {
