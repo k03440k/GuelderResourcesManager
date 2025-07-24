@@ -13,6 +13,7 @@
 #include <concepts>
 #include <unordered_map>
 #include <array>
+#include <filesystem>
 
 #ifdef WIN32
 #include <Windows.h>
@@ -21,11 +22,67 @@
 //idk #define NOMINMAX doesn't work
 //#undef max
 
+#ifndef GE_SCOPE_OPEN
+#define GE_SCOPE_OPEN '{'
+#endif
+
+#ifndef GE_SCOPE_CLOSE
+#define GE_SCOPE_CLOSE '}'
+#endif
+
+#ifndef GE_NAMESPACE_KEYWORD
+#define GE_NAMESPACE_KEYWORD "ns"
+#endif
+
+#ifndef GE_VARIABLE_VALUE_SCOPE
+#define GE_VARIABLE_VALUE_SCOPE '\"'
+#endif
+
+#ifndef GE_COMMENT_SCOPE_LINE
+#define GE_COMMENT_SCOPE_LINE "//"
+#endif
+
+#ifndef GE_SPECIAL_CHAR_SIGN
+#define GE_SPECIAL_CHAR_SIGN '\\'
+#endif
+
+#ifndef GE_SPECIAL_CHARS
+#define GE_SPECIAL_CHARS "\"\\"
+#endif
+
+#ifndef GE_NEWLINE
+#define GE_NEWLINE '\n'
+#endif
+
+#ifndef GE_WHITESPACE
+#define GE_WHITESPACE ' '
+#endif
+
+#ifndef GE_PATH_SEPARATOR
+#define GE_PATH_SEPARATOR '/'
+#endif
+
+#ifndef GE_EQUALS
+#define GE_EQUALS '='
+#endif
+
+#ifndef GE_SEMICOLON
+#define GE_SEMICOLON ';'
+#endif
+
 //converters
 namespace GuelderResourcesManager
 {
     template<typename T>
     concept IsNumber = std::integral<T> || std::floating_point<T>;
+
+    template<typename StringType>
+    concept String = requires(StringType str)
+    {
+        typename StringType::value_type;
+        str.data();
+        str.size();
+    };
 
     template<IsNumber Integer>
     Integer StringToNumber(const std::string_view& str)
@@ -91,7 +148,6 @@ namespace GuelderResourcesManager
     enum class DataType : uint8_t
     {
         Invalid = 0,
-        Var,
         Int,
         UInt,
         Long,
@@ -106,8 +162,7 @@ namespace GuelderResourcesManager
         Double,
         LongDouble,
         Bool,
-        String,
-        WString
+        String
     };
 
     inline DataType StringToDataType(const std::string_view& str)
@@ -115,7 +170,6 @@ namespace GuelderResourcesManager
         static const std::unordered_map<std::string_view, DataType> lookup =
         {
             {"Invalid", DataType::Invalid},
-            {"Var", DataType::Var},
             {"Int", DataType::Int},
             {"UInt", DataType::UInt},
             {"Long", DataType::Long},
@@ -131,7 +185,6 @@ namespace GuelderResourcesManager
             {"LongDouble", DataType::LongDouble},
             {"Bool", DataType::Bool},
             {"String", DataType::String},
-            {"WString", DataType::WString}
         };
 
         if(const auto it = lookup.find(str); it != lookup.end())
@@ -143,7 +196,6 @@ namespace GuelderResourcesManager
     {
         switch(type)
         {
-        case DataType::Var: return "Var";
         case DataType::Int: return "Int";
         case DataType::UInt: return "UInt";
         case DataType::Long: return "Long";
@@ -159,7 +211,6 @@ namespace GuelderResourcesManager
         case DataType::LongDouble: return "LongDouble";
         case DataType::Bool: return "Bool";
         case DataType::String: return "String";
-        case DataType::WString: return "WString";
         default: return "Invalid";
         }
     }
@@ -167,18 +218,22 @@ namespace GuelderResourcesManager
     struct Variable
     {
     public:
-        Variable(const std::string_view& name, const std::string_view& value = "", const DataType& type = DataType::Invalid)
-            : m_Name(name), m_Type(type), m_Value(value) {}
+        Variable(std::string variablePath, std::string value = "", DataType type = DataType::Invalid, bool isArray = false);
+        ~Variable() = default;
 
-        bool operator==(const Variable& other) const
-        {
-            return m_Type == other.m_Type && m_Value == other.m_Value;
-        }
+        Variable(const Variable& other) = default;
+        Variable(Variable&& other) noexcept = default;
+        Variable& operator=(const Variable& other) = default;
+        Variable& operator=(Variable&& other) noexcept = default;
+
+        bool operator==(const Variable& other) const;
+
+        static bool IsValidVariableChar(char ch);
 
         template<typename T>
         T GetValue() const
         {
-            throw std::exception("Failed to find any suitable method GetValue<T>(), probably the GetValue<T>() was called with invalid template param.");
+            throw std::exception(std::string{ typeid(T).raw_name() } + " type is not supported.");
         }
         template<IsNumber Numeral>
         Numeral GetValue() const
@@ -189,83 +244,165 @@ namespace GuelderResourcesManager
             return StringToNumber<Numeral>(m_Value);
         }
         template<>
-        bool GetValue() const
-        {
-            if(m_Type != DataType::Bool)
-                throw std::invalid_argument("The variable's type is not bool.");
-
-            return StringToBool(m_Value);
-        }
-
-        /**
-         * \brief WARNING: this method doesn't check whether the m_Type == DataType::String
-         */
+        bool GetValue() const;
         template<>
-        const std::string& GetValue() const
-        {
-            return m_Value;
-        }
-        template<>
-        std::string_view GetValue() const
-        {
-            return m_Value;
-        }
-        template<>
-        std::wstring GetValue() const
-        {
-            if(m_Type != DataType::WString)
-                throw std::invalid_argument("The variable's type is not std::wstring.");
+        const std::string& GetValue() const;
 
-            return StringToWString(m_Value);
-        }
+        [[nodiscard]]
+        bool IsNumeral() const;
 
-        bool SameType(const Variable& other) const
-        {
-            return m_Type == other.m_Type;
-        }
-        bool SameType(const DataType& type) const
-        {
-            return m_Type == type;
-        }
-
-        bool IsNumeral() const
-        {
-            switch(m_Type)
-            {
-            case DataType::Int:
-            case DataType::UInt:
-            case DataType::Long:
-            case DataType::ULong:
-            case DataType::LongLong:
-            case DataType::ULongLong:
-            case DataType::Short:
-            case DataType::UShort:
-            case DataType::Char:
-            case DataType::UChar:
-            case DataType::Float:
-            case DataType::Double:
-            case DataType::LongDouble:
-                return true;
-            default:
-                return false;
-            }
-        }
-
-        DataType GetType() const noexcept { return m_Type; }
-        const std::string& GetName() const noexcept { return m_Name; }
+        const std::string& GetRawValue() const;
+        DataType GetType() const noexcept;
+        std::string_view GetName() const;
+        const std::string& GetPath() const;
+        bool IsArray() const;
 
     private:
-        std::string m_Name;
+        std::string m_Path;
         DataType m_Type;
         std::string m_Value;
+        bool m_IsArray : 1;
+    };
+
+    struct ConfigFile
+    {
+    public:
+        ConfigFile(std::filesystem::path configFilePath);
+        ~ConfigFile() = default;
+
+        ConfigFile(const ConfigFile& other) = default;
+        ConfigFile(ConfigFile&& other) noexcept = default;
+        ConfigFile& operator=(const ConfigFile& other) = default;
+        ConfigFile& operator=(ConfigFile&& other) noexcept = default;
+
+        bool operator==(const ConfigFile& other) const;
+
+        void WriteVariable(Variable variable);
+
+        static std::vector<Variable> ExtractVariablesFromString(const std::string_view& configSource);
+        static std::vector<Variable> ExtractVariablesFromFile(const std::filesystem::path& configFilePath);
+
+        /// @brief This method opens file, e.g. operates with disk.
+        /// @return Gets full raw source of the config file
+        std::string GetConfigFileSource() const;
+        const std::filesystem::path& GetPath() const;
+
+        /// @param variablePath The namespace path to the variable. Syntax: namespace/namespace/variablePath or variablePath if there are no any namespaces.
+        /// @returns The variable that is saved in m_Variables.
+        const Variable& GetVariable(const std::string_view& variablePath) const;
+        const std::vector<Variable>& GetVariables() const;
+
+    public:
+        struct Parser
+        {
+        public:
+            using index = int;
+
+            static constexpr char SCOPE_OPEN = GE_SCOPE_OPEN;
+            static constexpr char SCOPE_CLOSE = GE_SCOPE_CLOSE;
+            static constexpr std::string_view NAMESPACE_KEYWORD = GE_NAMESPACE_KEYWORD;
+            static constexpr char VARIABLE_VALUE_SCOPE = GE_VARIABLE_VALUE_SCOPE;
+            static constexpr std::string_view COMMENT_SCOPE_LINE = GE_COMMENT_SCOPE_LINE;
+            static constexpr char SPECIAL_CHAR_SIGN = GE_SPECIAL_CHAR_SIGN;
+            static constexpr std::string_view SPECIAL_CHARS = GE_SPECIAL_CHARS;
+            static constexpr char NEWLINE = GE_NEWLINE;
+            static constexpr char WHITESPACE = GE_WHITESPACE;
+            static constexpr char PATH_SEPARATOR = GE_PATH_SEPARATOR;
+            static constexpr char EQUALS = GE_EQUALS;
+            static constexpr char SEMICOLON = GE_SEMICOLON;
+
+            struct StringRange
+            {
+                StringRange(index begin = std::string::npos, index end = std::string::npos);
+
+                template<String ReturnStringType, String ParamStringType = ReturnStringType>
+                ReturnStringType GetSubstring(const ParamStringType& string) const
+                {
+                    if(begin == std::string::npos || end == std::string::npos)
+                        return ReturnStringType{};
+                    if(end > 0 && begin <= end)
+                        return ReturnStringType{ string.data() + begin, string.data() + end + 1 };
+                    else
+                        throw std::exception{ "invalid begin or end indices" };
+                }
+
+                index begin;
+                index end;
+
+                friend StringRange operator+(const StringRange& lhs, const StringRange& rhs);
+                friend StringRange operator+(const StringRange& lhs, index rhs);
+
+                auto operator<=>(const StringRange&) const = default;
+            };
+
+            struct NamespaceIndicesInfo
+            {
+                StringRange keyword;
+                StringRange name;
+                StringRange scope;
+
+                friend NamespaceIndicesInfo operator+(const NamespaceIndicesInfo& lhs, const NamespaceIndicesInfo& rhs);
+                friend NamespaceIndicesInfo operator+(const NamespaceIndicesInfo& lhs, index rhs);
+
+                auto operator<=>(const NamespaceIndicesInfo&) const = default;
+            };
+            struct VariableIndicesInfo
+            {
+                StringRange type;
+                index equals;
+                StringRange name;
+                StringRange value;
+                index semicolon;
+
+                friend VariableIndicesInfo operator+(const VariableIndicesInfo& lhs, const VariableIndicesInfo& rhs);
+                friend VariableIndicesInfo operator+(const VariableIndicesInfo& lhs, index rhs);
+
+                auto operator<=>(const VariableIndicesInfo&) const = default;
+            };
+
+            enum class ParsingDataType : uint8_t
+            {
+                Invalid = 0,
+                Comment,
+                VariableValue,
+                Variable,
+                Namespace
+            };
+
+            static bool IsFullSubstringSame(const std::string_view& string, index stringIndexPosition, const std::string_view& substring);
+
+            static void ProcessNamespace(std::vector<Variable>& variables, std::string& path, const std::string_view& scope);
+
+            static NamespaceIndicesInfo ReceiveNamespaceInfo(const std::string_view& scope, const index& namespaceKeywordBeginIndex);
+            //if the variable is empty e.g. "", VariableIndicesInfo::value indices will be equal to std::string::npos
+            static VariableIndicesInfo ReceiveVariableInfo(const std::string_view& scope, const index& variableTypeBeginIndex);
+            //throws an error if nothing is found
+            static NamespaceIndicesInfo FindNamespace(const std::string_view& scope, const std::string_view& path);
+            //throws an error if nothing is found
+            static VariableIndicesInfo FindVariableInfo(const std::string_view& scope, const std::string_view& path);
+            static Variable FindVariable(const std::string_view& scope, const std::string_view& path);
+
+            //returns the scope after inserting
+            static std::string WriteVariable(std::string scope, const Variable& variable);
+            //may throw an exception
+            static std::string DeleteNamespace(std::string scope, const std::string_view& path);
+            //may throw an exception
+            static std::string DeleteVariable(std::string scope, const std::string_view& path);
+
+        private:
+            //this func basically needs an outer index of the scope, and those bools. This func finds out whether current char is about namespace or variable or other shit
+            static ParsingDataType DetermineParsingDataType(const std::string_view& scope, index currentCharIndex, bool& wasCommentScopeClosed, bool& wasValueScopeClosed);
+            static bool IsArray(const std::string_view& variableValue);
+        };
+    private:
+        std::filesystem::path m_Path;
+
+        std::vector<Variable> m_Variables;
     };
 }
 
 namespace GuelderResourcesManager
 {
-    template<typename T>
-    concept IsString = std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view> || std::is_same_v<T, std::wstring> || std::is_same_v<T, std::wstring_view>;
-
     template<typename Char>
     constexpr auto GetPOpen()
     {
@@ -286,7 +423,7 @@ namespace GuelderResourcesManager
     class ResourcesManager
     {
     public:
-        ResourcesManager(const std::string_view& executablePath, const std::string_view& resourcesFolderPath = "Resources", const std::string_view& configPath = "Config.txt");
+        ResourcesManager(std::filesystem::path executablePath = "");
         ~ResourcesManager() = default;
 
         ResourcesManager(const ResourcesManager& other) = default;
@@ -295,7 +432,7 @@ namespace GuelderResourcesManager
         ResourcesManager& operator=(ResourcesManager&& other) noexcept = default;
 
         //if outputs == std::numeric_limits<uint32_t>::max() then all outputs will be received
-        template<typename InChar = char, typename OutChar = InChar, uint32_t bufferSize = 128, IsString String = std::string>
+        template<typename InChar = char, typename OutChar = InChar, uint32_t bufferSize = 128, String String = std::string>
         static std::vector<std::basic_string<OutChar>> ExecuteCommand(const String& command, uint32_t outputs = std::numeric_limits<uint32_t>::max())
         {
             using OutString = std::basic_string<OutChar>;
@@ -325,7 +462,7 @@ namespace GuelderResourcesManager
             while(outputs > 0 && FGets(buffer.data(), buffer.size(), cmd.get()) != nullptr)
             {
                 auto newlinePos = std::find(buffer.begin(), buffer.end(), '\n');
-                output.append(buffer.begin(), newlinePos - 1 * (newlinePos == buffer.end() ? 1 : 0 ));//cuz buffer.end() - 1 is '\0'
+                output.append(buffer.begin(), newlinePos - 1 * (newlinePos == buffer.end() ? 1 : 0));//cuz buffer.end() - 1 is '\0'
 
                 if(newlinePos != buffer.end())
                 {
@@ -339,33 +476,17 @@ namespace GuelderResourcesManager
             return result;
         }
 
-        static std::string GetFileSource(const std::string_view& filePath);
-        std::string GetRelativeFileSource(const std::string_view& relativeFilePath) const;
-        /*
-         *@brief Finds variable content, for example: "var i = "staff";" then it will return "staff"
-        */
-        const Variable& GetVariable(const std::string_view& name) const;
-        /*
-         *@brief Finds file content by variable content in resources.txt
-        */
-        std::string GetFileSourceByVariable(const std::string_view& name) const;
+        static std::string ReceiveFileSource(const std::filesystem::path& filePath);
 
-        std::string GetFullPathToRelativeFile(const std::string_view& relativePath) const;
-        std::string GetFullPathToRelativeFileByVariable(const std::string_view& varName) const;
+        static void WriteToFile(const std::filesystem::path& filePath, const std::string_view& content);
+        //almost useless, use better first Rea
+        static void WriteToFile(const std::filesystem::path& filePath, ConfigFile::Parser::index index, const std::string_view& content);
 
-        static std::vector<Variable> GetVariablesFromFile(const std::string_view& configSource);
+        std::filesystem::path GetFullPathToRelativeFile(const std::filesystem::path& relativePath) const;
 
-        const std::vector<Variable>& GetVariables() const noexcept;
-
-        const std::string& GetPath() const;
-        const std::string& GetResourcesFolderPath() const;
-        const std::string& GetConfigPath() const;
+        const std::filesystem::path& GetPath() const;
 
     private:
-        std::vector<Variable> m_Vars;
-
-        std::string m_Path;
-        std::string m_ResourcesFolderPath;
-        std::string m_ConfigPath;
+        std::filesystem::path m_Path;
     };
 }
