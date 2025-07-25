@@ -145,6 +145,7 @@ namespace GuelderResourcesManager
 //variables
 namespace GuelderResourcesManager
 {
+    struct Variable;
     enum class DataType : uint8_t
     {
         Invalid = 0,
@@ -215,55 +216,6 @@ namespace GuelderResourcesManager
         }
     }
 
-    struct Variable
-    {
-    public:
-        Variable(std::string variablePath, std::string value = "", DataType type = DataType::Invalid, bool isArray = false);
-        ~Variable() = default;
-
-        Variable(const Variable& other) = default;
-        Variable(Variable&& other) noexcept = default;
-        Variable& operator=(const Variable& other) = default;
-        Variable& operator=(Variable&& other) noexcept = default;
-
-        bool operator==(const Variable& other) const;
-
-        static bool IsValidVariableChar(char ch);
-
-        template<typename T>
-        T GetValue() const
-        {
-            throw std::exception(std::string{ typeid(T).raw_name() } + " type is not supported.");
-        }
-        template<IsNumber Numeral>
-        Numeral GetValue() const
-        {
-            if(!IsNumeral())
-                throw std::invalid_argument("The variable's type is not numeral.");
-
-            return StringToNumber<Numeral>(m_Value);
-        }
-        template<>
-        bool GetValue() const;
-        template<>
-        const std::string& GetValue() const;
-
-        [[nodiscard]]
-        bool IsNumeral() const;
-
-        const std::string& GetRawValue() const;
-        DataType GetType() const noexcept;
-        std::string_view GetName() const;
-        const std::string& GetPath() const;
-        bool IsArray() const;
-
-    private:
-        std::string m_Path;
-        DataType m_Type;
-        std::string m_Value;
-        bool m_IsArray : 1;
-    };
-
     struct ConfigFile
     {
     public:
@@ -278,6 +230,8 @@ namespace GuelderResourcesManager
         bool operator==(const ConfigFile& other) const;
 
         void WriteVariable(Variable variable);
+
+        void DeleteVariable(const std::string_view& path);
 
         static std::vector<Variable> ExtractVariablesFromString(const std::string_view& configSource);
         static std::vector<Variable> ExtractVariablesFromFile(const std::filesystem::path& configFilePath);
@@ -346,18 +300,19 @@ namespace GuelderResourcesManager
 
                 auto operator<=>(const NamespaceIndicesInfo&) const = default;
             };
-            struct VariableIndicesInfo
+            struct VariableInfo
             {
                 StringRange type;
                 index equals;
                 StringRange name;
                 StringRange value;
                 index semicolon;
+                bool isArray;
 
-                friend VariableIndicesInfo operator+(const VariableIndicesInfo& lhs, const VariableIndicesInfo& rhs);
-                friend VariableIndicesInfo operator+(const VariableIndicesInfo& lhs, index rhs);
+                friend VariableInfo operator+(const VariableInfo& lhs, const VariableInfo& rhs);
+                friend VariableInfo operator+(const VariableInfo& lhs, index rhs);
 
-                auto operator<=>(const VariableIndicesInfo&) const = default;
+                auto operator<=>(const VariableInfo&) const = default;
             };
 
             enum class ParsingDataType : uint8_t
@@ -375,11 +330,11 @@ namespace GuelderResourcesManager
 
             static NamespaceIndicesInfo ReceiveNamespaceInfo(const std::string_view& scope, const index& namespaceKeywordBeginIndex);
             //if the variable is empty e.g. "", VariableIndicesInfo::value indices will be equal to std::string::npos
-            static VariableIndicesInfo ReceiveVariableInfo(const std::string_view& scope, const index& variableTypeBeginIndex);
+            static VariableInfo ReceiveVariableInfo(const std::string_view& scope, const index& variableTypeBeginIndex);
             //throws an error if nothing is found
             static NamespaceIndicesInfo FindNamespace(const std::string_view& scope, const std::string_view& path);
             //throws an error if nothing is found
-            static VariableIndicesInfo FindVariableInfo(const std::string_view& scope, const std::string_view& path);
+            static VariableInfo FindVariableInfo(const std::string_view& scope, const std::string_view& path);
             static Variable FindVariable(const std::string_view& scope, const std::string_view& path);
 
             //returns the scope after inserting
@@ -398,6 +353,199 @@ namespace GuelderResourcesManager
         std::filesystem::path m_Path;
 
         std::vector<Variable> m_Variables;
+    };
+
+    struct Variable
+    {
+    public:
+        using Bool = char;
+        template<typename T>
+        using Array = std::vector<T>;
+    public:
+        Variable(std::string variablePath, std::string value = "", DataType type = DataType::Invalid, bool isArray = false);
+        ~Variable() = default;
+
+        Variable(const Variable& other) = default;
+        Variable(Variable&& other) noexcept = default;
+        Variable& operator=(const Variable& other) = default;
+        Variable& operator=(Variable&& other) noexcept = default;
+
+        bool operator==(const Variable& other) const;
+
+        static bool IsValidVariableChar(char ch);
+
+        template<typename T>
+        T GetValue() const
+        {
+            throw std::exception{ "The type is invalid" };
+        }
+
+        template<IsNumber Numeral>
+        Numeral GetValue() const
+        {
+            if(!IsNumeral())
+                throw std::invalid_argument("The variable's type is not numeral.");
+
+            return StringToNumber<Numeral>(m_Value);
+        }
+        template<>
+        bool GetValue() const
+        {
+            if(m_Type != DataType::Bool)
+                throw std::invalid_argument{ "Wrong variable type" };
+
+            return StringToBool(m_Value);
+        }
+        template<>
+        const std::string& GetValue() const
+        {
+            if(m_Type != DataType::String)
+                throw std::invalid_argument{ "Wrong variable type" };
+
+            return m_Value;
+        }
+
+        template<typename T>
+        Array<T> GetArrayValue() const
+        {
+            throw std::exception{ "The type is invalid" };
+        }
+        //yeah the code is dogshit, but I'm too lazy to incapsulate
+        template<IsNumber Numeral>
+        Array<Numeral> GetArrayValue() const
+        {
+            using index = ConfigFile::Parser::index;
+
+            if((!IsNumeral() || m_Type == DataType::Bool) && !m_IsArray)
+                throw std::invalid_argument{ "Wrong variable type" };
+
+            Array<Numeral> result;
+
+            index valueBegin = 0;
+            bool valueScopeClosed = true;
+            //parsing
+            if(m_Type == DataType::Bool)
+                for(index i = 0; i < m_Value.size(); i++)
+                {
+                    char currentChar = m_Value[i];
+
+                    if(currentChar == ConfigFile::Parser::VARIABLE_VALUE_SCOPE)
+                    {
+                        size_t specialCharSignCount = 0;
+                        for(index j = i - 1; j > 0; j--)
+                        {
+                            char _currentChar = m_Value[j];
+                            if(_currentChar == ConfigFile::Parser::SPECIAL_CHAR_SIGN)
+                                specialCharSignCount++;
+                            else
+                                break;
+                        }
+
+                        if(specialCharSignCount % 2 == 0)
+                            valueScopeClosed = !valueScopeClosed;
+
+                        if(!valueScopeClosed)
+                            valueBegin = i;
+                        else
+                            result.push_back(StringToBool({ m_Value.cbegin() + valueBegin + 1, m_Value.cbegin() + i }));
+                    }
+                }
+            else
+                for(index i = 0; i < m_Value.size(); i++)
+                {
+                    char currentChar = m_Value[i];
+
+                    if(currentChar == ConfigFile::Parser::VARIABLE_VALUE_SCOPE)
+                    {
+                        size_t specialCharSignCount = 0;
+                        for(index j = i - 1; j > 0; j--)
+                        {
+                            char _currentChar = m_Value[j];
+                            if(_currentChar == ConfigFile::Parser::SPECIAL_CHAR_SIGN)
+                                specialCharSignCount++;
+                            else
+                                break;
+                        }
+
+                        if(specialCharSignCount % 2 == 0)
+                            valueScopeClosed = !valueScopeClosed;
+
+                        if(!valueScopeClosed)
+                            valueBegin = i;
+                        else
+                            result.push_back(StringToNumber<Numeral>({ m_Value.cbegin() + valueBegin + 1, m_Value.cbegin() + i }));
+                    }
+                }
+
+            return result;
+        }
+        template<>
+        Array<std::string> GetArrayValue() const
+        {
+            using index = ConfigFile::Parser::index;
+
+            if(m_Type != DataType::String && !m_IsArray)
+                throw std::invalid_argument{ "Wrong variable type" };
+
+            Array<std::string> result;
+
+            index valueBegin = 0;
+            bool valueScopeClosed = true;
+            //parsing
+            for(index i = 0; i < m_Value.size(); i++)
+            {
+                char currentChar = m_Value[i];
+
+                if(currentChar == ConfigFile::Parser::VARIABLE_VALUE_SCOPE)
+                {
+                    size_t specialCharSignCount = 0;
+                    for(index j = i - 1; j > 0; j--)
+                    {
+                        char _currentChar = m_Value[j];
+                        if(_currentChar == ConfigFile::Parser::SPECIAL_CHAR_SIGN)
+                            specialCharSignCount++;
+                        else
+                            break;
+                    }
+
+                    if(specialCharSignCount % 2 == 0)
+                    {
+                        valueScopeClosed = !valueScopeClosed;
+
+                        if(!valueScopeClosed)
+                            valueBegin = i;
+                        else
+                        {
+                            std::string value{m_Value.cbegin() + valueBegin + 1, m_Value.cbegin() + i};
+
+                            for(char specialChar : ConfigFile::Parser::SPECIAL_CHARS)
+                                for(index j = 0; j < value.size(); j++)
+                                    if(j > 0 && value[j] == specialChar && value[j - 1] == ConfigFile::Parser::SPECIAL_CHAR_SIGN)
+                                        value.erase(j - 1, 1);
+
+                            result.push_back(std::move(value));
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        [[nodiscard]]
+        bool IsNumeral() const;
+
+        const std::string& GetRawValue() const;
+        DataType GetType() const noexcept;
+        std::string_view GetName() const;
+        const std::string& GetPath() const;
+        bool IsArray() const;
+
+    private:
+        std::string m_Path;
+        DataType m_Type;
+        std::string m_Value;
+        bool m_IsArray : 1;
     };
 }
 

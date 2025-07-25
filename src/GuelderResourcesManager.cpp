@@ -26,24 +26,6 @@ namespace GuelderResourcesManager
         return std::isalnum(ch) || ch == '_';
     }
 
-    template <>
-    bool Variable::GetValue<bool>() const
-    {
-        if(m_Type != DataType::Bool)
-            throw std::invalid_argument("The variable's type is not DataType::Bool.");
-
-        return StringToBool(m_Value);
-    }
-
-    template <>
-    const std::string& Variable::GetValue<const std::string&>() const
-    {
-        if(m_Type != DataType::String)
-            throw std::invalid_argument("The variable's type is not DataType::String.");
-
-        return m_Value;
-    }
-
     bool Variable::IsNumeral() const
     {
         switch(m_Type)
@@ -120,6 +102,18 @@ namespace GuelderResourcesManager
         const std::string configSource = ResourcesManager::ReceiveFileSource(m_Path);
 
         ResourcesManager::WriteToFile(m_Path, Parser::WriteVariable(configSource, variableToInsert));
+    }
+
+    void ConfigFile::DeleteVariable(const std::string_view& path)
+    {
+        const auto it = std::ranges::find_if(m_Variables, [&path](const Variable& variable) { return variable.GetPath() == path; });
+
+        if(it == m_Variables.end())
+            throw std::invalid_argument{ "Failed to find variable" };
+
+        m_Variables.erase(it);
+
+        Parser::DeleteVariable(GetConfigFileSource(), path);
     }
 
     std::vector<Variable> ConfigFile::ExtractVariablesFromString(const std::string_view& configSource)
@@ -214,7 +208,7 @@ namespace GuelderResourcesManager
             }
             else if(parsingDataType == ParsingDataType::Variable)
             {
-                const VariableIndicesInfo variableInfo = ReceiveVariableInfo(scope, i);
+                const VariableInfo variableInfo = ReceiveVariableInfo(scope, i);
 
                 //const std::string_view variableType{ scope.cbegin() + variableInfo.typeBegin, scope.cbegin() + variableInfo.typeEnd + 1 };
                 //const std::string variableName{ scope.cbegin() + variableInfo.nameBegin, scope.cbegin() + variableInfo.nameEnd };
@@ -225,12 +219,13 @@ namespace GuelderResourcesManager
                 const std::string_view variableValueRaw = variableInfo.value.GetSubstring<std::string_view>(scope);
                 std::string variableValue{ variableValueRaw };
 
-                for(char specialChar : SPECIAL_CHARS)
-                    for(index j = 0; j < variableValue.size(); j++)
-                        if(j > 0 && variableValue[j] == specialChar && variableValue[j - 1] == SPECIAL_CHAR_SIGN)
-                            variableValue.erase(j - 1, 1);
+                if(!variableInfo.isArray)
+                    for(char specialChar : SPECIAL_CHARS)
+                        for(index j = 0; j < variableValue.size(); j++)
+                            if(j > 0 && variableValue[j] == specialChar && variableValue[j - 1] == SPECIAL_CHAR_SIGN)
+                                variableValue.erase(j - 1, 1);
 
-                variables.emplace_back(path + std::move(variableName), std::move(variableValue), StringToDataType(variableType), IsArray(variableValueRaw));
+                variables.emplace_back(path + std::move(variableName), std::move(variableValue), StringToDataType(variableType), variableInfo.isArray);
 
                 i = variableInfo.semicolon + 1;
             }
@@ -324,7 +319,7 @@ namespace GuelderResourcesManager
             {namespaceScopeBeginIndex, namespaceScopeEndIndex}
         };
     }
-    ConfigFile::Parser::VariableIndicesInfo ConfigFile::Parser::ReceiveVariableInfo(const std::string_view& scope, const index& variableTypeBeginIndex)
+    ConfigFile::Parser::VariableInfo ConfigFile::Parser::ReceiveVariableInfo(const std::string_view& scope, const index& variableTypeBeginIndex)
     {
         index variableTypeEndIndex = variableTypeBeginIndex + 1;
 
@@ -504,8 +499,11 @@ namespace GuelderResourcesManager
         }
         else
         {
-            variableValueBeginIndex++;
-            variableValueEndIndex--;
+            if(!isArray)
+            {
+                variableValueBeginIndex++;
+                variableValueEndIndex--;
+            }
         }
 
         return
@@ -514,7 +512,8 @@ namespace GuelderResourcesManager
             equalsIndex,
             {variableNameBeginIndex, variableNameEndIndex},
             {variableValueBeginIndex, variableValueEndIndex},
-            variableValueSemicolon
+            variableValueSemicolon,
+            isArray
         };
     }
 
@@ -569,7 +568,7 @@ namespace GuelderResourcesManager
         throw std::out_of_range{ "Failed to find namespace" };
     }
 
-    ConfigFile::Parser::VariableIndicesInfo ConfigFile::Parser::FindVariableInfo(const std::string_view& scope, const std::string_view& path)
+    ConfigFile::Parser::VariableInfo ConfigFile::Parser::FindVariableInfo(const std::string_view& scope, const std::string_view& path)
     {
         const index lastPathSeparatorIndex = path.find_last_of('/');
 
@@ -587,7 +586,7 @@ namespace GuelderResourcesManager
 
                 if(parsingDataType == ParsingDataType::Variable)
                 {
-                    const VariableIndicesInfo variableInfo = ReceiveVariableInfo(scope, j);
+                    const VariableInfo variableInfo = ReceiveVariableInfo(scope, j);
 
                     const std::string_view variableName = variableInfo.name.GetSubstring<std::string_view>(scope);
 
@@ -622,7 +621,7 @@ namespace GuelderResourcesManager
 
                     if(parsingDataType == ParsingDataType::Variable)
                     {
-                        const VariableIndicesInfo variableInfo = ReceiveVariableInfo(namespaceScope, j);
+                        const VariableInfo variableInfo = ReceiveVariableInfo(namespaceScope, j);
 
                         const std::string_view variableName = variableInfo.name.GetSubstring<std::string_view>(namespaceScope);
 
@@ -642,7 +641,7 @@ namespace GuelderResourcesManager
     }
     Variable ConfigFile::Parser::FindVariable(const std::string_view& scope, const std::string_view& path)
     {
-        const VariableIndicesInfo info = FindVariableInfo(scope, path);
+        const VariableInfo info = FindVariableInfo(scope, path);
 
         const std::string_view variableValueRaw = info.value.GetSubstring<std::string_view>(scope);
         std::string variableValue{ variableValueRaw };
@@ -768,7 +767,7 @@ namespace GuelderResourcesManager
     }
     std::string ConfigFile::Parser::DeleteVariable(std::string scope, const std::string_view& path)
     {
-        VariableIndicesInfo variableIndicesInfo = FindVariableInfo(scope, path);
+        VariableInfo variableIndicesInfo = FindVariableInfo(scope, path);
 
         scope.erase(scope.cbegin() + variableIndicesInfo.type.begin, scope.cbegin() + variableIndicesInfo.semicolon + 1);
 
@@ -879,7 +878,7 @@ namespace GuelderResourcesManager
         };
     }
 
-    ConfigFile::Parser::VariableIndicesInfo operator+(const ConfigFile::Parser::VariableIndicesInfo& lhs, const ConfigFile::Parser::VariableIndicesInfo& rhs)
+    ConfigFile::Parser::VariableInfo operator+(const ConfigFile::Parser::VariableInfo& lhs, const ConfigFile::Parser::VariableInfo& rhs)
     {
         return
         {
@@ -890,7 +889,7 @@ namespace GuelderResourcesManager
             lhs.semicolon + rhs.semicolon
         };
     }
-    ConfigFile::Parser::VariableIndicesInfo operator+(const ConfigFile::Parser::VariableIndicesInfo& lhs, ConfigFile::Parser::index rhs)
+    ConfigFile::Parser::VariableInfo operator+(const ConfigFile::Parser::VariableInfo& lhs, ConfigFile::Parser::index rhs)
     {
         return
         {
