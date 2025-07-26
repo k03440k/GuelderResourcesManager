@@ -204,7 +204,7 @@ namespace GuelderResourcesManager
                 else
                     path.clear();
 
-                i = namespaceInfo.scope.end + 1;
+                i = namespaceInfo.scope.end;
             }
             else if(parsingDataType == ParsingDataType::Variable)
             {
@@ -227,7 +227,7 @@ namespace GuelderResourcesManager
 
                 variables.emplace_back(path + std::move(variableName), std::move(variableValue), StringToDataType(variableType), variableInfo.isArray);
 
-                i = variableInfo.semicolon + 1;
+                i = variableInfo.semicolon;
             }
         }
     }

@@ -404,6 +404,14 @@ namespace GuelderResourcesManager
 
             return m_Value;
         }
+        template<>
+        std::string GetValue() const
+        {
+            if(m_Type != DataType::String)
+                throw std::invalid_argument{ "Wrong variable type" };
+
+            return m_Value;
+        }
 
         template<typename T>
         Array<T> GetArrayValue() const
