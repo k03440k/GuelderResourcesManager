@@ -372,7 +372,7 @@ namespace GuelderResourcesManager
             }
         }
 
-        auto dbg1 = std::string_view{scope.begin() + namespaceScopeBeginIndex, scope.begin() + namespaceScopeEndIndex};
+        //auto dbg1 = std::string_view{scope.begin() + namespaceScopeBeginIndex, scope.begin() + namespaceScopeEndIndex};
 
         namespaceScopeEndIndex--;
 
@@ -776,7 +776,7 @@ namespace GuelderResourcesManager
             NamespaceIndicesInfo namespaceIndicesInfo;
             try
             {
-                std::vector<std::string_view> dbgs;
+                //std::vector<std::string_view> dbgs;
                 for(prevPathSeparatorOffset = 0; pathSeparatorOffset != std::string::npos; prevPathSeparatorOffset = pathSeparatorOffset + 1, pathSeparatorOffset = path.find(PATH_SEPARATOR, prevPathSeparatorOffset))
                 {
                     currentNamespace = { path.cbegin() + prevPathSeparatorOffset, path.cbegin() + pathSeparatorOffset };
@@ -789,7 +789,7 @@ namespace GuelderResourcesManager
                     currentScope = namespaceIndicesInfo.scope.GetSubstring<std::string_view>(currentScope);
                     insertOffset += namespaceIndicesInfo.scope.begin;
 
-                    dbgs.push_back(currentScope);
+                    //dbgs.push_back(currentScope);
                 }
             }
             catch(...)
@@ -896,7 +896,7 @@ namespace GuelderResourcesManager
 
         for(auto&& variable : variables)
         {
-            bool dbgBool = IsFullSubstringSame(variable.GetName(), 0, "attachment0Path");
+            //bool dbgBool = IsFullSubstringSame(variable.GetName(), 0, "attachment0Path");
 
             scope = WriteVariable(std::move(scope), variable, scopeRange);
         }
@@ -1182,7 +1182,7 @@ namespace GuelderResourcesManager
 
                 VariableIndicesInfo variableIndices = ReceiveVariableInfo(scope, i);
 
-                std::string dbgFinal1;
+                /*std::string dbgFinal1;
                 {
                     auto dbg1 = variableIndices.type.GetSubstring<std::string_view>(scope);
                     auto dbg2 = variableIndices.name.GetSubstring<std::string_view>(scope);
@@ -1191,7 +1191,7 @@ namespace GuelderResourcesManager
                     auto dbg5 = scope[variableIndices.semicolon];
 
                     dbgFinal1 = GuelderConsoleLog::Logger::Format(dbg1, dbg2, dbg3, dbg4, dbg5);
-                }
+                }*/
 
 
                 //checking for gaps
@@ -1258,7 +1258,7 @@ namespace GuelderResourcesManager
                     }
                 }
 
-                std::string dbgFinal2;
+                /*std::string dbgFinal2;
                 {
                     auto dbg1 = variableIndices.type.GetSubstring<std::string_view>(scope);
                     auto dbg2 = variableIndices.name.GetSubstring<std::string_view>(scope);
@@ -1269,7 +1269,7 @@ namespace GuelderResourcesManager
                     dbgFinal2 = GuelderConsoleLog::Logger::Format(dbg1, dbg2, dbg3, dbg4, dbg5);
                 }
 
-                bool dbgBool = dbgFinal1 == dbgFinal2;
+                bool dbgBool = dbgFinal1 == dbgFinal2;*/
 
                 i = variableIndices.semicolon + 1;
 
