@@ -70,6 +70,18 @@
 #define GE_SEMICOLON ';'
 #endif
 
+#ifndef GE_TAB
+#define GE_TAB '\t'
+#endif
+
+#ifndef GE_SCOPE_DISTANCE
+#define GE_SCOPE_DISTANCE "    "
+#endif
+
+#ifndef GE_ARRAY_ITEMS_SEPARATOR
+#define GE_ARRAY_ITEMS_SEPARATOR ','
+#endif
+
 //converters
 namespace GuelderResourcesManager
 {
@@ -219,7 +231,189 @@ namespace GuelderResourcesManager
     struct ConfigFile
     {
     public:
-        ConfigFile(std::filesystem::path configFilePath);
+        struct Parser
+        {
+        public:
+            using index = int;
+
+            static constexpr char SCOPE_OPEN = GE_SCOPE_OPEN;
+            static constexpr char SCOPE_CLOSE = GE_SCOPE_CLOSE;
+            static constexpr std::string_view NAMESPACE_KEYWORD = GE_NAMESPACE_KEYWORD;
+            static constexpr char VARIABLE_VALUE_SCOPE = GE_VARIABLE_VALUE_SCOPE;
+            static constexpr std::string_view COMMENT_SCOPE_LINE = GE_COMMENT_SCOPE_LINE;
+            static constexpr char SPECIAL_CHAR_SIGN = GE_SPECIAL_CHAR_SIGN;
+            static constexpr std::string_view SPECIAL_CHARS = GE_SPECIAL_CHARS;
+            static constexpr char NEWLINE = GE_NEWLINE;
+            static constexpr char WHITESPACE = GE_WHITESPACE;
+            static constexpr char PATH_SEPARATOR = GE_PATH_SEPARATOR;
+            static constexpr char EQUALS = GE_EQUALS;
+            static constexpr char SEMICOLON = GE_SEMICOLON;
+            static constexpr char TAB = GE_TAB;
+            static constexpr std::string_view SCOPE_DISTANCE = GE_SCOPE_DISTANCE;
+            static constexpr char ARRAY_ITEMS_SEPARATOR = GE_ARRAY_ITEMS_SEPARATOR;
+
+            struct StringRange
+            {
+                StringRange(index begin = std::string::npos, index end = std::string::npos);
+
+                template<String ReturnStringType, String ParamStringType = ReturnStringType>
+                ReturnStringType GetSubstring(const ParamStringType& string) const
+                {
+                    if(begin == std::string::npos || end == std::string::npos)
+                        return ReturnStringType{};
+                    if(begin >= 0 && end >= 0 && begin <= end)
+                        return ReturnStringType{ string.data() + begin, string.data() + end + 1 };
+                    else
+                        throw std::exception{ "invalid begin or end indices" };
+                }
+
+                bool IsValid() const noexcept;
+
+                index begin;
+                index end;
+
+                friend StringRange operator+(const StringRange& lhs, const StringRange& rhs);
+                friend StringRange operator+(const StringRange& lhs, index rhs);
+                StringRange& operator+=(index offset);
+                StringRange& operator-=(index offset);
+
+                auto operator<=>(const StringRange&) const = default;
+            };
+
+            struct NamespaceIndicesInfo
+            {
+                StringRange keyword;
+                StringRange name;
+                StringRange scope;
+
+                friend NamespaceIndicesInfo operator+(const NamespaceIndicesInfo& lhs, const NamespaceIndicesInfo& rhs);
+                friend NamespaceIndicesInfo operator+(const NamespaceIndicesInfo& lhs, index rhs);
+                NamespaceIndicesInfo& operator+=(index offset);
+
+                auto operator<=>(const NamespaceIndicesInfo&) const = default;
+            };
+            struct VariableIndicesInfo
+            {
+                StringRange type;
+                index equals;
+                StringRange name;
+                StringRange value;
+                index semicolon;
+                bool isArray;
+
+                friend VariableIndicesInfo operator+(const VariableIndicesInfo& lhs, const VariableIndicesInfo& rhs);
+                friend VariableIndicesInfo operator+(const VariableIndicesInfo& lhs, index rhs);
+                VariableIndicesInfo& operator+=(index offset);
+
+                auto operator<=>(const VariableIndicesInfo&) const = default;
+            };
+
+            enum class ParsingDataType : uint8_t
+            {
+                Invalid = 0,
+                Comment,
+                VariableValue,
+                Variable,
+                Namespace
+            };
+
+            static bool IsFullSubstringSame(const std::string_view& string, index stringIndexPosition, const std::string_view& substring);
+
+            static void ProcessNamespace(std::vector<Variable>& variables, std::string& path, const std::string_view& scope);
+
+            static NamespaceIndicesInfo ReceiveNamespaceInfo(const std::string_view& scope, const index& namespaceKeywordBeginIndex);
+            //if the variable is empty e.g. "", VariableIndicesInfo::value indices will be equal to std::string::npos
+            static VariableIndicesInfo ReceiveVariableInfo(const std::string_view& scope, const index& variableTypeBeginIndex);
+            //throws an error if nothing is found
+            static NamespaceIndicesInfo FindNamespace(const std::string_view& scope, const std::string_view& path);
+            //throws an error if nothing is found
+            static VariableIndicesInfo FindVariableInfo(const std::string_view& scope, const std::string_view& path);
+            static Variable FindVariable(const std::string_view& scope, const std::string_view& path);
+
+            //returns the scope after inserting
+            static std::string WriteVariable(std::string scope, const Variable& variable, StringRange scopeRange = {});
+            static std::string WriteVariables(std::string scope, const std::vector<Variable>& variables, StringRange scopeRange = {});
+            /// 
+            /// @param scope 
+            /// @param variable 
+            /// @param after path to variable or namespace
+            /// @return 
+            static std::string WriteVariableAfter(std::string scope, const Variable& variable, const std::string_view& after, StringRange scopeRange = {});
+            /// 
+            /// @param scope 
+            /// @param variable 
+            /// @param after path to variable or namespace
+            /// @return 
+            static std::string WriteVariablesAfter(std::string scope, const std::vector<Variable>& variables, const std::string_view& after, StringRange scopeRange = {});
+            /// 
+            /// @param scope 
+            /// @param variable 
+            /// @param before path to variable or namespace
+            /// @return 
+            static std::string WriteVariableBefore(std::string scope, const Variable& variable, const std::string_view& before, StringRange scopeRange = {});
+            /// 
+            /// @param scope 
+            /// @param variable 
+            /// @param before path to variable or namespace
+            /// @return 
+            static std::string WriteVariablesBefore(std::string scope, const std::vector<Variable>& variables, const std::string_view& before, StringRange scopeRange = {});
+
+            //may throw an exception
+            static std::string DeleteNamespace(std::string scope, const std::string_view& path);
+            //may throw an exception
+            static std::string DeleteVariable(std::string scope, const std::string_view& path);
+            //makes beauty
+            static std::string FormatScope(std::string scope, StringRange range = {});
+
+            //makes from <f""fff> -> <f\"\"fff> so it is usable for config and variable value string.
+            //This assumes that variableValue is not already populated with SPECIAL_CHAR_SIGH, so if variableValue == "\\", then output will be "\\\\", but NOT "\\"
+            static std::string AddSpecialChars(std::string variableValue);
+
+            static size_t DetermineReserveSize(const Variable& variable);
+
+            //returns <"1", "2", "3"> with NO BRACES
+            template<typename T>
+                requires
+                requires(std::stringstream& ss, T value) { ss << value; }
+            &&
+                (
+                    requires(T value) { std::to_string(value); }
+            ||
+                String<T>
+                )
+                static std::string CreateArrayVariableValue(const std::vector<T>& array)
+            {
+                //TODO: maybe reserve?
+                std::stringstream result;
+
+                const size_t size = array.size();
+                size_t i = 0;
+
+                for(const auto& item : array)
+                {
+                    i++;
+
+                    result << VARIABLE_VALUE_SCOPE << std::to_string(item) << VARIABLE_VALUE_SCOPE;
+
+                    if(i < size)
+                        result << ARRAY_ITEMS_SEPARATOR;
+                }
+
+                return result.str();
+            }
+
+        private:
+            //this func basically needs an outer index of the scope, and those bools. This func finds out whether current char is about namespace or variable or other shit
+            static ParsingDataType DetermineParsingDataType(const std::string_view& scope, index currentCharIndex, bool& wasCommentScopeClosed, bool& wasValueScopeClosed);
+            static bool IsArray(const std::string_view& variableValue);
+
+            static index FormatScope(std::string& scope, StringRange& namespaceScope, index scopesOpened, bool wasNewLine = false);
+
+            static StringRange CorrectStringRange(index scopeEnd, StringRange stringRange);
+            static StringRange CorrectStringRange(const std::string_view& scope, const StringRange& stringRange);
+        };
+    public:
+        ConfigFile(std::filesystem::path configFilePath, bool createOrOpen = true);
         ~ConfigFile() = default;
 
         ConfigFile(const ConfigFile& other) = default;
@@ -228,6 +422,8 @@ namespace GuelderResourcesManager
         ConfigFile& operator=(ConfigFile&& other) noexcept = default;
 
         bool operator==(const ConfigFile& other) const;
+
+        void Reopen();
 
         void WriteVariable(Variable variable);
 
@@ -246,109 +442,9 @@ namespace GuelderResourcesManager
         const Variable& GetVariable(const std::string_view& variablePath) const;
         const std::vector<Variable>& GetVariables() const;
 
-    public:
-        struct Parser
-        {
-        public:
-            using index = int;
+        //may throw an error
+        void Format(const Parser::StringRange& range = {}) const;
 
-            static constexpr char SCOPE_OPEN = GE_SCOPE_OPEN;
-            static constexpr char SCOPE_CLOSE = GE_SCOPE_CLOSE;
-            static constexpr std::string_view NAMESPACE_KEYWORD = GE_NAMESPACE_KEYWORD;
-            static constexpr char VARIABLE_VALUE_SCOPE = GE_VARIABLE_VALUE_SCOPE;
-            static constexpr std::string_view COMMENT_SCOPE_LINE = GE_COMMENT_SCOPE_LINE;
-            static constexpr char SPECIAL_CHAR_SIGN = GE_SPECIAL_CHAR_SIGN;
-            static constexpr std::string_view SPECIAL_CHARS = GE_SPECIAL_CHARS;
-            static constexpr char NEWLINE = GE_NEWLINE;
-            static constexpr char WHITESPACE = GE_WHITESPACE;
-            static constexpr char PATH_SEPARATOR = GE_PATH_SEPARATOR;
-            static constexpr char EQUALS = GE_EQUALS;
-            static constexpr char SEMICOLON = GE_SEMICOLON;
-
-            struct StringRange
-            {
-                StringRange(index begin = std::string::npos, index end = std::string::npos);
-
-                template<String ReturnStringType, String ParamStringType = ReturnStringType>
-                ReturnStringType GetSubstring(const ParamStringType& string) const
-                {
-                    if(begin == std::string::npos || end == std::string::npos)
-                        return ReturnStringType{};
-                    if(end > 0 && begin <= end)
-                        return ReturnStringType{ string.data() + begin, string.data() + end + 1 };
-                    else
-                        throw std::exception{ "invalid begin or end indices" };
-                }
-
-                index begin;
-                index end;
-
-                friend StringRange operator+(const StringRange& lhs, const StringRange& rhs);
-                friend StringRange operator+(const StringRange& lhs, index rhs);
-
-                auto operator<=>(const StringRange&) const = default;
-            };
-
-            struct NamespaceIndicesInfo
-            {
-                StringRange keyword;
-                StringRange name;
-                StringRange scope;
-
-                friend NamespaceIndicesInfo operator+(const NamespaceIndicesInfo& lhs, const NamespaceIndicesInfo& rhs);
-                friend NamespaceIndicesInfo operator+(const NamespaceIndicesInfo& lhs, index rhs);
-
-                auto operator<=>(const NamespaceIndicesInfo&) const = default;
-            };
-            struct VariableInfo
-            {
-                StringRange type;
-                index equals;
-                StringRange name;
-                StringRange value;
-                index semicolon;
-                bool isArray;
-
-                friend VariableInfo operator+(const VariableInfo& lhs, const VariableInfo& rhs);
-                friend VariableInfo operator+(const VariableInfo& lhs, index rhs);
-
-                auto operator<=>(const VariableInfo&) const = default;
-            };
-
-            enum class ParsingDataType : uint8_t
-            {
-                Invalid = 0,
-                Comment,
-                VariableValue,
-                Variable,
-                Namespace
-            };
-
-            static bool IsFullSubstringSame(const std::string_view& string, index stringIndexPosition, const std::string_view& substring);
-
-            static void ProcessNamespace(std::vector<Variable>& variables, std::string& path, const std::string_view& scope);
-
-            static NamespaceIndicesInfo ReceiveNamespaceInfo(const std::string_view& scope, const index& namespaceKeywordBeginIndex);
-            //if the variable is empty e.g. "", VariableIndicesInfo::value indices will be equal to std::string::npos
-            static VariableInfo ReceiveVariableInfo(const std::string_view& scope, const index& variableTypeBeginIndex);
-            //throws an error if nothing is found
-            static NamespaceIndicesInfo FindNamespace(const std::string_view& scope, const std::string_view& path);
-            //throws an error if nothing is found
-            static VariableInfo FindVariableInfo(const std::string_view& scope, const std::string_view& path);
-            static Variable FindVariable(const std::string_view& scope, const std::string_view& path);
-
-            //returns the scope after inserting
-            static std::string WriteVariable(std::string scope, const Variable& variable);
-            //may throw an exception
-            static std::string DeleteNamespace(std::string scope, const std::string_view& path);
-            //may throw an exception
-            static std::string DeleteVariable(std::string scope, const std::string_view& path);
-
-        private:
-            //this func basically needs an outer index of the scope, and those bools. This func finds out whether current char is about namespace or variable or other shit
-            static ParsingDataType DetermineParsingDataType(const std::string_view& scope, index currentCharIndex, bool& wasCommentScopeClosed, bool& wasValueScopeClosed);
-            static bool IsArray(const std::string_view& variableValue);
-        };
     private:
         std::filesystem::path m_Path;
 
@@ -524,7 +620,7 @@ namespace GuelderResourcesManager
                             valueBegin = i;
                         else
                         {
-                            std::string value{m_Value.cbegin() + valueBegin + 1, m_Value.cbegin() + i};
+                            std::string value{ m_Value.cbegin() + valueBegin + 1, m_Value.cbegin() + i };
 
                             for(char specialChar : ConfigFile::Parser::SPECIAL_CHARS)
                                 for(index j = 0; j < value.size(); j++)
@@ -634,6 +730,7 @@ namespace GuelderResourcesManager
 
         static std::string ReceiveFileSource(const std::filesystem::path& filePath);
 
+        static void AppendToFile(const std::filesystem::path& filePath, const std::string_view& append);
         static void WriteToFile(const std::filesystem::path& filePath, const std::string_view& content);
         //almost useless, use better first Rea
         static void WriteToFile(const std::filesystem::path& filePath, ConfigFile::Parser::index index, const std::string_view& content);
