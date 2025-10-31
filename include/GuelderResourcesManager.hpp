@@ -14,6 +14,8 @@
 #include <unordered_map>
 #include <array>
 #include <filesystem>
+#include <expected>
+#include <future>
 
 #ifdef WIN32
 #include <Windows.h>
@@ -684,19 +686,14 @@ namespace GuelderResourcesManager
         ResourcesManager& operator=(ResourcesManager&& other) noexcept = default;
 
         //if outputs == std::numeric_limits<uint32_t>::max() then all outputs will be received
-        template<typename InChar = char, typename OutChar = InChar, uint32_t bufferSize = 128, String String = std::string>
-        static std::vector<std::basic_string<OutChar>> ExecuteCommand(const String& command, uint32_t outputs = std::numeric_limits<uint32_t>::max())
+        //this one probably can't be stopped, so I'm making a windows version of this one
+        template<typename InChar = char, typename OutChar = InChar, uint32_t bufferSize = 128, String String = std::basic_string<InChar>>
+        static std::expected<std::vector<std::basic_string<OutChar>>, std::string> ExecuteCommand(const String& command, uint32_t outputs = std::numeric_limits<uint32_t>::max())
         {
             using OutString = std::basic_string<OutChar>;
 
             auto PipeOpen = GetPOpen<InChar>();
             auto FGets = GetFGets<OutChar>();
-
-            std::array<OutChar, bufferSize> buffer{};
-            std::vector<OutString> result;
-
-            if(outputs != std::numeric_limits<uint32_t>::max())
-                result.reserve(outputs);
 
             const InChar* mode;
             if constexpr(std::is_same_v<InChar, char>)
@@ -707,7 +704,13 @@ namespace GuelderResourcesManager
             const std::unique_ptr<FILE, decltype(&_pclose)> cmd(PipeOpen(command.data(), mode), _pclose);
 
             if(!cmd)
-                throw std::exception("Failed to execute command.");
+                return std::unexpected{ "Failed to execute command." };
+
+            std::array<OutChar, bufferSize> buffer{};
+            std::vector<OutString> result;
+
+            if(outputs != std::numeric_limits<uint32_t>::max())
+                result.reserve(outputs);
 
             OutString output;
 
@@ -728,6 +731,216 @@ namespace GuelderResourcesManager
             return result;
         }
 
+#ifdef WIN32
+        struct Handle;
+        struct ProcessInfo;
+        //if outputs == std::numeric_limits<uint32_t>::max() then all outputs will be received
+        //if exception occurs, it throws a DWORD. if pipe ends with bad exit code then it returns std::unexpected
+        template<typename Char = char, uint32_t bufferSize = 128, String String = std::basic_string<Char>>
+        static std::expected<std::vector<std::string>, int> ExecuteCommandWin(const String& command, uint32_t outputs = std::numeric_limits<uint32_t>::max(), DWORD msDelay = 100)
+        {
+            using OutString = std::string;
+
+            ProcessInfo processInfo;
+            Handle readPipe;
+
+            {
+                Handle writePipe;
+
+                SECURITY_ATTRIBUTES securityAttributes{ sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
+                if(!CreatePipe(&readPipe.handle, &writePipe.handle, &securityAttributes, 0))
+                    throw GetLastError();
+
+                SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
+
+                auto startupInfo = GetSTARTUPINFO<Char>();
+                startupInfo.cb = sizeof(startupInfo);
+                startupInfo.dwFlags = STARTF_USESTDHANDLES;
+                startupInfo.hStdOutput = writePipe;
+                startupInfo.hStdError = writePipe;
+                startupInfo.hStdInput = nullptr;
+
+                if constexpr(std::is_same_v<Char, wchar_t>)
+                {
+                    if(!CreateProcessW(nullptr, const_cast<wchar_t*>(command.c_str()), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &startupInfo, &processInfo.processInfo))
+                        throw GetLastError();
+                }
+                else if constexpr(std::is_same_v<Char, char>)
+                {
+                    if(!CreateProcessA(nullptr, const_cast<char*>(command.c_str()), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &startupInfo, &processInfo.processInfo))
+                        throw GetLastError();
+                }
+                else
+                    static_assert(0, "Unsupported type for char");
+            }
+
+            std::array<OutString::value_type, bufferSize> buffer{};
+            std::vector<OutString> result;
+
+            if(outputs != std::numeric_limits<uint32_t>::max())
+                result.reserve(outputs);
+
+            OutString output;
+            DWORD bytesRead;
+
+            while(outputs > 0)
+            {
+                if(!ReadFile(readPipe, buffer.data(), buffer.size() - 1, &bytesRead, nullptr) || bytesRead == 0)
+                {
+                    DWORD status = WaitForSingleObject(processInfo.processInfo.hProcess, msDelay);
+                    if(status == WAIT_TIMEOUT)
+                        continue;
+                    else
+                        break;
+                }
+
+                buffer[buffer.size() - 1] = '\0';
+
+                auto newlinePos = std::find(buffer.begin(), buffer.end(), '\n');
+                output.append(buffer.begin(), newlinePos - 1 * (newlinePos == buffer.end() ? 1 : 0));//cuz buffer.end() - 1 is '\0'
+
+                if(newlinePos != buffer.end())
+                {
+                    result.push_back(std::move(output));
+                    output.clear();
+
+                    outputs--;
+                }
+            }
+
+            DWORD exitCode = 0;
+            if(GetExitCodeProcess(processInfo.processInfo.hProcess, &exitCode))
+            {
+                if(exitCode != STILL_ACTIVE && exitCode != 0)
+                    return std::unexpected(exitCode);
+            }
+            else
+                throw GetLastError();
+
+            return result;
+        }
+
+        struct ProcessAsync;
+
+        //if outputs == std::numeric_limits<uint32_t>::max() then all outputs will be received
+        //if exception occurs, it throws a DWORD. if pipe ends with bad exit code then it returns std::unexpected
+        template<typename Char = char, uint32_t bufferSize = 128, String String = std::basic_string<Char>>
+        static ProcessAsync ExecuteCommandWinAsync(const String& command, uint32_t outputs = std::numeric_limits<uint32_t>::max(), DWORD msDelay = 100)
+        {
+            using OutString = std::string;
+
+            ProcessInfo processInfo;
+            Handle readPipe;
+
+            {
+                Handle writePipe;
+
+                SECURITY_ATTRIBUTES securityAttributes{ sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
+                if(!CreatePipe(&readPipe.handle, &writePipe.handle, &securityAttributes, 0))
+                    throw GetLastError();
+
+                SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
+
+                auto startupInfo = GetSTARTUPINFO<Char>();
+                startupInfo.cb = sizeof(startupInfo);
+                startupInfo.dwFlags = STARTF_USESTDHANDLES;
+                startupInfo.hStdOutput = writePipe;
+                startupInfo.hStdError = writePipe;
+                startupInfo.hStdInput = nullptr;
+
+                if constexpr(std::is_same_v<Char, wchar_t>)
+                {
+                    if(!CreateProcessW(nullptr, const_cast<wchar_t*>(command.c_str()), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &startupInfo, &processInfo.processInfo))
+                        throw GetLastError();
+                }
+                else if constexpr(std::is_same_v<Char, char>)
+                {
+                    if(!CreateProcessA(nullptr, const_cast<char*>(command.c_str()), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &startupInfo, &processInfo.processInfo))
+                        throw GetLastError();
+                }
+                else
+                    static_assert(0, "Unsupported type for char");
+            }
+
+            auto processInfoTmp = processInfo.processInfo;
+            processInfo.processInfo.hProcess = nullptr;
+            processInfo.processInfo.hThread = nullptr;
+
+            return
+            ProcessAsync{
+                std::async([outputs, msDelay, _processInfo = std::move(processInfo), processInfoTmp, _readPipe = std::move(readPipe)] mutable -> std::expected<std::vector<std::string>, int>
+                {
+                    _processInfo = processInfoTmp;
+
+                    std::array<OutString::value_type, bufferSize> buffer{};
+                    std::vector<OutString> result;
+
+                    if(outputs != std::numeric_limits<uint32_t>::max())
+                        result.reserve(outputs);
+
+                    OutString output;
+                    DWORD bytesRead;
+
+                    while(outputs > 0)
+                    {
+                        if(!ReadFile(_readPipe, buffer.data(), buffer.size() - 1, &bytesRead, nullptr) || bytesRead == 0)
+                        {
+                            DWORD status = WaitForSingleObject(_processInfo.processInfo.hProcess, msDelay);
+                            if(status == WAIT_TIMEOUT)
+                                continue;
+                            else
+                                break;
+                        }
+
+                        buffer[buffer.size() - 1] = '\0';
+
+                        auto newlinePos = std::find(buffer.begin(), buffer.end(), '\n');
+                        output.append(buffer.begin(), newlinePos - 1 * (newlinePos == buffer.end() ? 1 : 0));//cuz buffer.end() - 1 is '\0'
+
+                        if(newlinePos != buffer.end())
+                        {
+                            result.push_back(std::move(output));
+                            output.clear();
+
+                            outputs--;
+                        }
+                    }
+
+                    DWORD exitCode = 0;
+                    if(GetExitCodeProcess(_processInfo.processInfo.hProcess, &exitCode))
+                    {
+                        if(exitCode != STILL_ACTIVE && exitCode != 0)
+                            return std::unexpected(exitCode);
+                    }
+                    else
+                        throw GetLastError();
+
+                    return result;
+                }),
+                processInfoTmp
+            };
+        }
+
+        struct ProcessAsync
+        {
+            ProcessAsync(std::future<std::expected<std::vector<std::string>, int>>&& future, PROCESS_INFORMATION processInfo)
+                : future(std::move(future)), m_ProcessInfo(processInfo) {
+            }
+
+            //may throw a DWORD
+            void TerminateProcess() const
+            {
+                if(!::TerminateProcess(m_ProcessInfo.hProcess, 1))
+                    throw GetLastError();
+            }
+
+            std::future<std::expected<std::vector<std::string>, int>> future;
+
+        private:
+            PROCESS_INFORMATION m_ProcessInfo;
+        };
+#endif
+
         static std::string ReceiveFileSource(const std::filesystem::path& filePath);
 
         static void AppendToFile(const std::filesystem::path& filePath, const std::string_view& append);
@@ -741,5 +954,91 @@ namespace GuelderResourcesManager
 
     private:
         std::filesystem::path m_Path;
+
+#ifdef WIN32
+        struct Handle
+        {
+            Handle(HANDLE other = nullptr)
+                : handle(other) {}
+            Handle(Handle&& other) noexcept
+                : handle(other.handle)
+            {
+                other.handle = nullptr;
+            }
+            Handle& operator=(Handle&& other) noexcept
+            {
+                handle = other.handle;
+
+                other.handle = nullptr;
+
+                return *this;
+            }
+            Handle& operator=(const HANDLE& other)
+            {
+                handle = other;
+
+                return *this;
+            }
+            ~Handle()
+            {
+                if(handle)
+                    CloseHandle(handle);
+            }
+
+            operator HANDLE& ()
+            {
+                return handle;
+            }
+
+            HANDLE handle;
+        };
+        struct ProcessInfo
+        {
+            ProcessInfo(PROCESS_INFORMATION processInfo = PROCESS_INFORMATION{})
+                : processInfo(processInfo) {}
+            ProcessInfo(ProcessInfo&& other) noexcept
+                : processInfo(other.processInfo)
+            {
+                other.processInfo = {};
+            }
+            ProcessInfo& operator=(ProcessInfo&& other) noexcept
+            {
+                processInfo = other.processInfo;
+
+                other.processInfo = {};
+
+                return *this;
+            }
+            ProcessInfo& operator=(const PROCESS_INFORMATION& other)
+            {
+                processInfo = other;
+
+                return *this;
+            }
+            ~ProcessInfo()
+            {
+                if(processInfo.hProcess)
+                    CloseHandle(processInfo.hProcess);
+                if(processInfo.hThread)
+                    CloseHandle(processInfo.hThread);
+            }
+
+            operator PROCESS_INFORMATION& ()
+            {
+                return processInfo;
+            }
+
+            PROCESS_INFORMATION processInfo;
+        };
+
+        template<typename Char>
+        static constexpr auto GetSTARTUPINFO()
+        {
+            if constexpr(std::is_same_v<Char, char>)
+                return STARTUPINFOA{};
+            else if(std::is_same_v<Char, wchar_t>)
+                return STARTUPINFOW{};
+        }
+#endif
     };
 }
